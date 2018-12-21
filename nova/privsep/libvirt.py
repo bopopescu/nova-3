@@ -290,3 +290,26 @@ def cleanup_vpmem(dev):
         'sudo daxio -z -o /dev/%s ' % dev,
     )
     processutils.execute("".join(cmd), shell=True, check_exit_code=0)
+
+
+@nova.privsep.sys_admin_pctxt.entrypoint
+def migrate_pmem_data(src_dev=None, dst_dev=None, remote_address=None,
+                      src_size_mb=None, dst_size_mb=None, label_size_mb=2):
+    # copy the namespace data
+    cmd_1 = (
+        'sudo daxio -i /dev/%s ' % src_dev,
+        '-l %sM ' % (src_size_mb - label_size_mb - 2),
+        '|ssh root@%s ' % remote_address,
+        '"sudo daxio -o /dev/%s ' % dst_dev,
+        '-l %sM "' % (src_size_mb - label_size_mb - 2),
+    )
+    # copy the label data
+    cmd_2 = (
+        'sudo daxio -i /dev/%s ' % src_dev,
+        '-k %sM ' % (src_size_mb - label_size_mb - 2),
+        '|ssh root@%s ' % remote_address,
+        '"sudo daxio -o /dev/%s ' % dst_dev,
+        '-s %sM "' % (dst_size_mb - label_size_mb - 2),
+    )
+    processutils.execute("".join(cmd_1), shell=True, check_exit_code=0)
+    processutils.execute("".join(cmd_2), shell=True, check_exit_code=0)

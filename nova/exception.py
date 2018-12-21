@@ -1405,6 +1405,10 @@ class CannotResizeDisk(NovaException):
     msg_fmt = _("Server disk was unable to be resized because: %(reason)s")
 
 
+class CannotResizeVpmem(NovaException):
+    msg_fmt = _("Server vpmem was unable to be resized because: %(reason)s")
+
+
 class FlavorMemoryTooSmall(NovaException):
     msg_fmt = _("Flavor's memory is too small for requested image.")
 

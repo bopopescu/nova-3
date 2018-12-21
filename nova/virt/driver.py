@@ -655,6 +655,14 @@ class ComputeDriver(object):
         """
         pass
 
+    def migrate_vpmems_data(self, context, instance):
+        """Migrate vpmems data to.
+
+        :param context: security context
+        :param instance: nova.objects.instance.Instance
+        """
+        pass
+
     def finish_migration(self, context, migration, instance, disk_info,
                          network_info, image_meta, resize_instance,
                          block_device_info=None, power_on=True):

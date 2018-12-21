@@ -4459,6 +4459,8 @@ class ComputeManager(manager.Manager):
                     block_device_info,
                     timeout, retry_interval)
 
+            self.driver.migrate_vpmems_data(context, instance)
+
             self._terminate_volume_connections(context, instance, bdms)
 
             migration_p = obj_base.obj_to_primitive(migration)

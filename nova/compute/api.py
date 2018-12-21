@@ -3323,6 +3323,42 @@ class API(base.Base):
                                                  used=useds,
                                                  allowed=total_alloweds)
 
+    @staticmethod
+    def _check_vpmems_for_resize(instance,
+                                 current_flavor, new_flavor):
+        image_meta = instance.image_meta
+        current_numa_topo = hardware.numa_get_constraints(current_flavor,
+                                                          image_meta)
+        try:
+            new_numa_topo = hardware.numa_get_constraints(new_flavor,
+                                                          image_meta)
+        except (exception.InvalidNUMAVPMEMSize,
+                exception.InvalidNUMAVPMEM) as e:
+            raise exception.CannotResizeVpmem(reason=e.format_message())
+
+        if not current_numa_topo or not new_numa_topo:
+            return
+
+        for cell_id in range(len(current_numa_topo.cells)):
+            curr_cell = current_numa_topo.cells[cell_id]
+            try:
+                new_cell = new_numa_topo.cells[cell_id]
+            except IndexError:
+                return
+            if 'virtual_pmems' not in curr_cell or not curr_cell.virtual_pmems:
+                return
+            if 'virtual_pmems' not in new_cell or not new_cell.virtual_pmems:
+                return
+            for vpmem_id in range(len(curr_cell.virtual_pmems)):
+                curr_vpmem = curr_cell.virtual_pmems[vpmem_id]
+                try:
+                    new_vpmem = new_cell.virtual_pmems[vpmem_id]
+                except IndexError:
+                    break
+                if new_vpmem.size_mb < curr_vpmem.size_mb:
+                    reason = _('new vpmem size is smaller than the old one')
+                    raise exception.CannotResizeVpmem(reason=reason)
+
     @check_instance_lock
     @check_instance_cell
     @check_instance_state(vm_state=[vm_states.RESIZED])
@@ -3496,6 +3532,10 @@ class API(base.Base):
             self._check_quota_for_upsize(context, instance,
                                          current_instance_type,
                                          new_instance_type)
+
+        self._check_vpmems_for_resize(instance,
+                                      current_instance_type,
+                                      new_instance_type)
 
         instance.task_state = task_states.RESIZE_PREP
         instance.progress = 0
