@@ -1403,6 +1403,11 @@ class LibvirtDriver(driver.ComputeDriver):
         inst_base = libvirt_utils.get_instance_path(instance)
         target = inst_base + '_resize'
 
+        # zero the data on backend old pmem device
+        vpmems = self._get_vpmems(instance, migrate=True)
+        if vpmems:
+            self._cleanup_vpmems(vpmems)
+
         # Deletion can fail over NFS, so retry the deletion as required.
         # Set maximum attempt as 5, most test can remove the directory
         # for the second time.
@@ -3349,11 +3354,20 @@ class LibvirtDriver(driver.ComputeDriver):
         timer = loopingcall.FixedIntervalLoopingCall(_wait_for_boot)
         timer.start(interval=0.5).wait()
 
-    def _get_vpmems(self, instance):
+    def _get_vpmems(self, instance, migrate=False):
         vpmems = []
-        if 'numa_topology' not in instance or not instance.numa_topology:
-            return vpmems
-        for numa_node, cell in enumerate(instance.numa_topology.cells):
+        if not migrate:
+            if 'numa_topology' not in instance or not instance.numa_topology:
+                return vpmems
+            numa_topology = instance.numa_topology
+        else:
+            if 'migration_context' not in instance or \
+                    not instance.migration_context or \
+                    'old_numa_topology' not in instance.migration_context or \
+                    not instance.migration_context.old_numa_topology:
+                return vpmems
+            numa_topology = instance.migration_context.old_numa_topology
+        for numa_node, cell in enumerate(numa_topology.cells):
             if 'virtual_pmems' not in cell:
                 continue
             for virtual_pmem in cell.virtual_pmems:
@@ -9110,6 +9124,46 @@ class LibvirtDriver(driver.ComputeDriver):
                                                shared_storage)
 
         return jsonutils.dumps(disk_info)
+
+    def migrate_vpmems_data(self, context, instance):
+        LOG.debug("Starting migrate_vpmems_data",
+                   instance=instance)
+
+        if 'migration_context' not in instance or \
+                not instance.migration_context:
+            return
+        migration_context = instance.migration_context
+        if 'old_numa_topology' not in migration_context or \
+            'new_numa_topology' not in migration_context:
+            return
+        old_numa_topo = migration_context.old_numa_topology
+        new_numa_topo = migration_context.new_numa_topology
+        if not old_numa_topo or not new_numa_topo:
+            return
+
+        remote_address = context.remote_address
+        old_cells = old_numa_topo.cells
+        new_cells = new_numa_topo.cells
+        for cell_id in range(len(old_cells)):
+            old_cell = old_cells[cell_id]
+            try:
+                new_cell = new_cells[cell_id]
+            except IndexError:
+                return
+            old_vpmems = old_cell.virtual_pmems or []
+            new_vpmems = new_cell.virtual_pmems or []
+            for vpmem_id in range(len(old_vpmems)):
+                old_vpmem = old_vpmems[vpmem_id]
+                try:
+                    new_vpmem = new_vpmems[vpmem_id]
+                except IndexError:
+                    break
+                nova.privsep.libvirt.migrate_pmem_data(
+                    src_dev=old_vpmem.backend_dev,
+                    dst_dev=new_vpmem.backend_dev,
+                    src_size_mb=old_vpmem.size_mb,
+                    dst_size_mb=new_vpmem.size_mb,
+                    remote_address=remote_address)
 
     def _wait_for_running(self, instance):
         state = self.get_info(instance).state

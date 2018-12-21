@@ -4497,6 +4497,17 @@ class ComputeManager(manager.Manager):
                     block_device_info,
                     timeout, retry_interval)
 
+            new_allow_pmem_copy = True
+            old_allow_pmem_copy = True
+            if instance.new_flavor:
+                new_allow_pmem_copy = instance.new_flavor.extra_specs.get(
+                    "hw:allow_pmem_copy", "true") == "true"
+            if instance.flavor:
+                old_allow_pmem_copy = instance.flavor.extra_specs.get(
+                    "hw:allow_pmem_copy", "true") == "true"
+            if new_allow_pmem_copy or old_allow_pmem_copy:
+                self.driver.migrate_vpmems_data(context, instance)
+
             self._terminate_volume_connections(context, instance, bdms)
 
             migration_p = obj_base.obj_to_primitive(migration)

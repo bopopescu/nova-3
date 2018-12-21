@@ -2204,6 +2204,51 @@ class _ComputeAPIUnitTestMixIn(object):
                 project_values={'cores': 1, 'ram': 2560},
                 project_id=fake_inst.project_id, user_id=fake_inst.user_id)
 
+    @mock.patch('nova.compute.flavors.get_flavor_by_flavor_id')
+    @mock.patch.object(compute_api.API, '_check_quota_for_upsize')
+    def test_resize_vpmems_check_fails(self, mock_upsize, mock_get_flavor):
+
+        cur_flavor = objects.Flavor(id=1, flavorid='cur', name='foo', vcpus=4,
+                                    memory_mb=512, root_gb=10, disabled=False,
+                                    extra_specs={"hw:numa_nodes": 2,
+                                                 "hw:numa_pmem": "512MB"})
+        fake_inst = self._create_instance_obj()
+        fake_inst.flavor = cur_flavor
+        new_flavor = objects.Flavor(id=2, flavorid='new', name='bar', vcpus=4,
+                                    memory_mb=2048, root_gb=10, disabled=False,
+                                    extra_specs={"hw:numa_nodes": 2,
+                                                 "hw:numa_pmem": "256MB"})
+        mock_get_flavor.return_value = new_flavor
+
+        self.assertRaises(exception.CannotResizeVpmem, self.compute_api.resize,
+                          self.context, fake_inst, flavor_id='new')
+
+    @mock.patch.object(conductor.api.ComputeTaskAPI, 'resize_instance')
+    @mock.patch.object(objects.Instance, 'save')
+    @mock.patch.object(compute_api.API, '_record_action_start')
+    @mock.patch.object(compute_api.API, '_resize_cells_support')
+    @mock.patch.object(objects.RequestSpec, 'get_by_instance_uuid')
+    @mock.patch('nova.compute.flavors.get_flavor_by_flavor_id')
+    @mock.patch.object(compute_api.API, '_check_quota_for_upsize')
+    def test_resize_vpmems_check_successes(self, mock_upsize, mock_get_flavor,
+                                           mock_get_req, mock_resize_cells,
+                                           mock_record, mock_save,
+                                           mock_resize):
+
+        cur_flavor = objects.Flavor(id=1, flavorid='cur', name='foo', vcpus=4,
+                                    memory_mb=512, root_gb=10, disabled=False,
+                                    extra_specs={"hw:numa_nodes": 2,
+                                                 "hw:numa_pmem": "512MB"})
+        fake_inst = self._create_instance_obj()
+        fake_inst.flavor = cur_flavor
+        new_flavor = objects.Flavor(id=2, flavorid='new', name='bar', vcpus=4,
+                                    memory_mb=2048, root_gb=10, disabled=False,
+                                    extra_specs={"hw:numa_nodes": 2,
+                                                 "hw:numa_pmem": "1024MB"})
+        mock_get_flavor.return_value = new_flavor
+
+        self.compute_api.resize(self.context, fake_inst, flavor_id='new')
+
     def test_migrate(self):
         self._test_migrate()
 
