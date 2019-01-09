@@ -2370,3 +2370,22 @@ class ZVMConnectorError(ZVMDriverException):
         self.rc = results.get('rc')
         self.rs = results.get('rs')
         self.errmsg = results.get('errmsg')
+
+
+class PMEMNamespaceNotTracked(NovaException):
+    msg_fmt = _("The PMEM namespace %(namespace)s is not tracked in db.")
+
+
+class PMEMNamespaceNotMatchHost(NovaException):
+    msg_fmt = _("The PMEM namespace %(namespace)s saved in db "
+                "is not match the existed namespace on the host.")
+
+
+class PMEMNamespaceNotMatchConfig(NovaException):
+    msg_fmt = _("The PMEM namespace %(namespace)s saved in db "
+                "is not match the namespace configuration.")
+
+
+class PMEMNamespaceCreateFailed(NovaException):
+    msg_fmt = _("Failed to create the pmem namespace: "
+                "%(error)s")
