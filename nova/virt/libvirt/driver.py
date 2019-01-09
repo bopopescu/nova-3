@@ -284,6 +284,12 @@ MIN_QEMU_NATIVE_TLS_VERSION = (2, 11, 0)
 VGPU_RESOURCE_SEMAPHORE = "vgpu_resources"
 
 
+# This is used to save the pmem namespace info temporarily
+PMEMNamespace = collections.namedtuple('PMEMNamespace',
+        ['uuid', 'name', 'region', 'dev', 'size_mb',
+         'alignment', 'numa_node', 'assigned'])
+
+
 class LibvirtDriver(driver.ComputeDriver):
     def __init__(self, virtapi, read_only=False):
         # NOTE(aspiers) Some of these are dynamic, so putting
@@ -388,6 +394,122 @@ class LibvirtDriver(driver.ComputeDriver):
         # NOTE(sbauza): We only want a read-only cache, this attribute is not
         # intended to be updatable directly
         self.provider_tree = None
+
+        # Setup the pmem region based on the configuration.
+        self._pmem_namespaces = self._get_pmem_namespaces()
+
+    def _get_pmem_namespaces(self):
+        pmem_nss = {}  # PMEMNamespace list by the numa_node
+        pmem_nss_conf = self._get_pmem_namespaces_in_config()
+        if not pmem_nss_conf:
+            return pmem_nss
+        pmem_nss_host = self._get_pmem_namespaces_on_host()
+        pmem_nss_db = self._get_pmem_namespaces_from_db()
+        for key in pmem_nss_conf.keys():
+            ns_conf = pmem_nss_conf[key]
+            if not pmem_nss_host.get(key):
+                pmem_ns = self._create_namespace(ns_conf.name,
+                                                 ns_conf.region,
+                                                 ns_conf.size_mb)
+            elif not pmem_nss_db.get(key):
+                raise exception.PMEMNamespaceNotTracked(namespace=key)
+            else:
+                if not pmem_nss_db[key].uuid == pmem_nss_host[key].uuid:
+                    raise exception.PMEMNamespaceNotMatchHost(namespace=key)
+                if not pmem_nss_db[key].size_mb == pmem_nss_conf[key].size_mb:
+                    raise exception.PMEMNamespaceNotMatchConfig(namespace=key)
+                pmem_ns = pmem_nss_db[key]
+            pmem_nss.setdefault(pmem_ns.numa_node, [])
+
+            # Set the assigned filed to default False
+            pmem_nss[pmem_ns.numa_node].append(
+                PMEMNamespace(uuid=pmem_ns.uuid,
+                              name=pmem_ns.name,
+                              region=pmem_ns.region,
+                              dev=pmem_ns.dev,
+                              size_mb=pmem_ns.size_mb,
+                              alignment=pmem_ns.alignment,
+                              numa_node=pmem_ns.numa_node,
+                              assigned=False))
+        return pmem_nss
+
+    def _get_pmem_namespaces_in_config(self):
+        if not CONF.libvirt.pmem_namespace_sizes:
+            return
+        pmem_nss_conf = {}
+        for region_conf in CONF.libvirt.pmem_namespace_sizes:
+            region_name = region_conf.split(":")[0].strip()
+            region_id = int(region_name[6:])
+            sizes = region_conf.split(":")[1].split("|")
+            for i in range(len(sizes)):
+                name = CONF.libvirt.pmem_namespace_prefix + region_name + \
+                       '_' + six.text_type(i)
+                pmem_nss_conf[name] = \
+                    PMEMNamespace(uuid=None,
+                                  name=name,
+                                  region=region_id,
+                                  dev=None,
+                                  size_mb=int(sizes[i]),
+                                  alignment=None,
+                                  numa_node=None,
+                                  assigned=None)
+
+        return pmem_nss_conf
+
+    def _get_pmem_namespaces_on_host(self):
+        pmem_nss_host = {}
+        nss = jsonutils.loads(nova.privsep.libvirt.get_pmem_namespaces())
+        for ns in nss:
+            if not ns.get('name') or not \
+                ns['name'].startswith(CONF.libvirt.pmem_namespace_prefix):
+                continue
+            pmem_nss_host[ns['name']] = \
+                PMEMNamespace(uuid=ns['uuid'],
+                              name=ns['name'],
+                              region=ns['daxregion']['id'],
+                              dev=ns['daxregion']['devices'][0]['chardev'],
+                              size_mb=None,
+                              alignment=ns['daxregion']['align'],
+                              numa_node=None,
+                              assigned=None)
+        return pmem_nss_host
+
+    def _get_pmem_namespaces_from_db(self):
+        pmem_nss_db = {}
+        topology = self._get_host_numa_topology_from_db()
+        if not topology:
+            return {}
+        for cell in topology.cells:
+            if not cell.pmem_namespaces:
+                continue
+            for ns in cell.pmem_namespaces:
+                pmem_nss_db[ns.name] = \
+                    PMEMNamespace(uuid=ns.uuid,
+                                  name=ns.name,
+                                  region=ns.region,
+                                  dev=ns.dev,
+                                  size_mb=ns.size_mb,
+                                  alignment=ns.alignment,
+                                  numa_node=cell.id,
+                                  assigned=ns.assigned)
+        return pmem_nss_db
+
+    def _create_namespace(self, name, region, size):
+        ns_info = nova.privsep.libvirt.create_pmem_namespace(
+                name, region, size)
+        try:
+            ns = jsonutils.loads(ns_info)
+        except Exception:
+            raise exception.PMEMNamespaceCreateFailed(error=ns_info)
+
+        return PMEMNamespace(uuid=ns['uuid'],
+                             name=name,
+                             region=region,
+                             dev=ns['daxregion']['devices'][0]['chardev'],
+                             size_mb=size,
+                             alignment=ns['daxregion']['align'],
+                             numa_node=ns['numa_node'],
+                             assigned=False)
 
     def _get_volume_drivers(self):
         driver_registry = dict()
@@ -6562,6 +6684,20 @@ class LibvirtDriver(driver.ComputeDriver):
             cells.append(cell)
 
         return objects.NUMATopology(cells=cells)
+
+    def _get_host_numa_topology_from_db(self):
+        ctx = nova_context.get_admin_context()
+        host = CONF.host
+        nodename = self._host.get_hostname()
+        cn = None
+        try:
+            cn = objects.ComputeNode.get_by_host_and_nodename(
+                    ctx, host, nodename)
+        except Exception as e:
+            LOG.warning('Error: %(error)s', {'error': e})
+        if cn:
+            return objects.NUMATopology.obj_from_db_obj(cn.numa_topology)
+        return None
 
     def get_all_volume_usage(self, context, compute_host_bdms):
         """Return usage info for volumes attached to vms on

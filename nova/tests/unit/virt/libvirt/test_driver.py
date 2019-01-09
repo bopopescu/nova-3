@@ -22991,3 +22991,208 @@ class TestLibvirtMultiattach(test.NoDBTestCase):
     #     calls = [mock.call(lv_ver=libvirt_driver.MIN_LIBVIRT_MULTIATTACH),
     #              mock.call(hv_ver=(2, 10, 0))]
     #     has_min_version.assert_has_calls(calls)
+
+
+class LibvirtPMEMNamespaceTests(test.NoDBTestCase):
+
+    def setUp(self):
+        super(LibvirtPMEMNamespaceTests, self).setUp()
+        self.useFixture(fakelibvirt.FakeLibvirtFixture())
+
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver.'
+                '_get_pmem_namespaces')
+    def test_get_pmem_nss_in_config(self, mock_get_pmem_nss):
+        CONF.set_override("pmem_namespace_sizes", ['region0:4096|4096'],
+                          group='libvirt')
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        pmem_nss_in_config = drvr._get_pmem_namespaces_in_config()
+        expected_pmem_nss_in_config = {}
+        expected_pmem_nss_in_config['pmem_namespace_region0_0'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid=None, name='pmem_namespace_region0_0', region=0,
+                dev=None, size_mb=4096, alignment=None, numa_node=None,
+                assigned=None)
+        expected_pmem_nss_in_config['pmem_namespace_region0_1'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid=None, name='pmem_namespace_region0_1', region=0,
+                dev=None, size_mb=4096, alignment=None, numa_node=None,
+                assigned=None)
+        self.assertEqual(expected_pmem_nss_in_config, pmem_nss_in_config)
+
+    @mock.patch('nova.privsep.libvirt.get_pmem_namespaces')
+    def test_get_pmem_nss_on_host(self, mock_get_nss):
+        mock_get_nss.return_value = \
+            '[{"dev":"namespace0.0",' + \
+            '"mode":"devdax",' + \
+            '"map":"mem",' + \
+            '"size":"4.00 GiB (4.29 GB)",' + \
+            '"uuid":"24ffd5e4-2b39-4f28-88b3-d6dc1ec44863",' + \
+            '"daxregion":{"id": 0, "size": "4.00 GiB (4.29 GB)","align": 2097152,' + \
+            '"devices":[{"chardev":"dax0.0",' + \
+            '"size":"4.00 GiB (4.29 GB)"}]},' + \
+            '"name":"pmem_namespace_region0_0"},' + \
+            '{"dev":"namespace0.1",' + \
+            '"mode":"devdax",' + \
+            '"map":"mem",' + \
+            '"size":"4.00 GiB (4.29 GB)",' + \
+            '"uuid":"ac64fe52-de38-465b-b32b-947a6773ac66",' + \
+            '"daxregion":{"id": 0, "size": "4.00 GiB (4.29 GB)","align": 2097152,' + \
+            '"devices":[{"chardev":"dax0.1",' + \
+            '"size":"4.00 GiB (4.29 GB)"}]},' + \
+            '"name":"pmem_namespace_region0_1"}]'
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        pmem_nss_on_host = drvr._get_pmem_namespaces_on_host()
+        expected_pmem_nss_on_host = {}
+        expected_pmem_nss_on_host['pmem_namespace_region0_0'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid='24ffd5e4-2b39-4f28-88b3-d6dc1ec44863',
+                name='pmem_namespace_region0_0', region=0,
+                dev='dax0.0', size_mb=None, alignment=2097152, numa_node=None,
+                assigned=None)
+        expected_pmem_nss_on_host['pmem_namespace_region0_1'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid='ac64fe52-de38-465b-b32b-947a6773ac66',
+                name='pmem_namespace_region0_1', region=0,
+                dev='dax0.1', size_mb=None, alignment=2097152, numa_node=None,
+                assigned=None)
+        self.assertEqual(expected_pmem_nss_on_host, pmem_nss_on_host)
+
+    @mock.patch.object(libvirt_driver.LibvirtDriver,
+                       '_get_host_numa_topology_from_db')
+    def test_get_pmem_nss_from_db(self, mock_get_numatopo):
+        pmem_namespaces = [
+            objects.PMEMNamespace(
+                uuid='24ffd5e4-2b39-4f28-88b3-d6dc1ec44863',
+                name='pmem_namespace_region0_0',
+                region=0, dev='dax0.0', size_mb=4096, alignment=2097152,
+                assigned=False),
+            objects.PMEMNamespace(
+                uuid='ac64fe52-de38-465b-b32b-947a6773ac66',
+                name='pmem_namespace_region0_1',
+                region=0, dev='dax0.1', size_mb=4096, alignment=2097152,
+                assigned=True)]
+        mock_get_numatopo.return_value = objects.NUMATopology(
+            cells=[
+                objects.NUMACell(
+                    id=0, cpuset=set([1, 2]),
+                    siblings=[set([1]), set([2])],
+                    memory=1024, mempages=[],
+                    pmem_namespaces=pmem_namespaces)])
+
+        expected_pmem_nss_from_db = {}
+        expected_pmem_nss_from_db['pmem_namespace_region0_0'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid='24ffd5e4-2b39-4f28-88b3-d6dc1ec44863',
+                name='pmem_namespace_region0_0', region=0,
+                dev='dax0.0', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=False)
+        expected_pmem_nss_from_db['pmem_namespace_region0_1'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid='ac64fe52-de38-465b-b32b-947a6773ac66',
+                name='pmem_namespace_region0_1', region=0,
+                dev='dax0.1', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=True)
+
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        pmem_nss_from_db = drvr._get_pmem_namespaces_from_db()
+        self.assertEqual(expected_pmem_nss_from_db, pmem_nss_from_db)
+
+    @mock.patch.object(libvirt_driver.LibvirtDriver,
+                       '_get_pmem_namespaces_from_db')
+    @mock.patch.object(libvirt_driver.LibvirtDriver,
+                       '_get_pmem_namespaces_on_host')
+    def test_get_pmem_namespaces(self,
+                                 mock_pmem_nss_on_host,
+                                 mock_pmem_nss_from_db):
+        CONF.set_override("pmem_namespace_sizes", ['region0:4096|4096'],
+                          group='libvirt')
+
+        pmem_nss_on_host = {}
+        pmem_nss_on_host['pmem_namespace_region0_0'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid='24ffd5e4-2b39-4f28-88b3-d6dc1ec44863',
+                name='pmem_namespace_region0_0', region=0,
+                dev='dax0.0', size_mb=None, alignment=2097152, numa_node=None,
+                assigned=None)
+        pmem_nss_on_host['pmem_namespace_region0_1'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid='ac64fe52-de38-465b-b32b-947a6773ac66',
+                name='pmem_namespace_region0_1', region=0,
+                dev='dax0.1', size_mb=None, alignment=2097152, numa_node=None,
+                assigned=None)
+        mock_pmem_nss_on_host.return_value = pmem_nss_on_host
+
+        pmem_nss_from_db = {}
+        pmem_nss_from_db['pmem_namespace_region0_0'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid='24ffd5e4-2b39-4f28-88b3-d6dc1ec44863',
+                name='pmem_namespace_region0_0', region=0,
+                dev='dax0.0', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=False)
+        pmem_nss_from_db['pmem_namespace_region0_1'] = \
+            libvirt_driver.PMEMNamespace(
+                uuid='ac64fe52-de38-465b-b32b-947a6773ac66',
+                name='pmem_namespace_region0_1', region=0,
+                dev='dax0.1', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=True)
+        mock_pmem_nss_from_db.return_value = pmem_nss_from_db
+
+        expected_pmem_nss = {0: [
+            libvirt_driver.PMEMNamespace(
+                uuid='24ffd5e4-2b39-4f28-88b3-d6dc1ec44863',
+                name='pmem_namespace_region0_0', region=0,
+                dev='dax0.0', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=False),
+            libvirt_driver.PMEMNamespace(
+                uuid='ac64fe52-de38-465b-b32b-947a6773ac66',
+                name='pmem_namespace_region0_1', region=0,
+                dev='dax0.1', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=False)]}
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        pmem_nss = drvr._get_pmem_namespaces()
+        for key in expected_pmem_nss.keys():
+            self.assertEqual(sorted(expected_pmem_nss[key]),
+                             sorted(pmem_nss[key]))
+
+    @mock.patch('nova.privsep.libvirt.create_pmem_namespace')
+    def test_pmem_ns_create(self, mock_create_ns):
+        mock_create_ns.return_value = \
+              '{"dev":"namespace0.0",' + \
+               '"mode":"devdax",' + \
+               '"map":"mem",' + \
+               '"size":"4.00 GiB (4.29 GB)",' + \
+               '"uuid":"24ffd5e4-2b39-4f28-88b3-d6dc1ec44863",' + \
+               '"raw_uuid":"76e1555d-6d7c-4510-a279-4feacf1420ac",' + \
+               '"daxregion":{"id": 0, "size": "4.00 GiB (4.29 GB)","align": 2097152,' + \
+                            '"devices":[{"chardev":"dax0.0",' + \
+                            '"size":"4.00 GiB (4.29 GB)"}]},' + \
+               '"name":"pmem_namespace_region0_0",' + \
+               '"numa_node":0}'
+
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+
+        pmem_ns_created = drvr._create_namespace(
+            name='pmem_namespace_region0_0',
+            region=0,
+            size=4096)
+        expected_pmem_ns = libvirt_driver.PMEMNamespace(
+                uuid="24ffd5e4-2b39-4f28-88b3-d6dc1ec44863",
+                name='pmem_namespace_region0_0',
+                region=0,
+                dev='dax0.0',
+                size_mb=4096,
+                alignment=2097152,
+                numa_node=0,
+                assigned=False
+            )
+        self.assertEqual(expected_pmem_ns, pmem_ns_created)
+
+    @mock.patch('nova.privsep.libvirt.create_pmem_namespace')
+    def test_pmem_ns_create_failed(self, mock_create_ns):
+        mock_create_ns.return_value = \
+                'failed to create namespace: ' + \
+                'No such device or address'
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        self.assertRaises(exception.PMEMNamespaceCreateFailed,
+                          drvr._create_namespace,
+                          'pmem_namespace_region0_0', 0, 4096)

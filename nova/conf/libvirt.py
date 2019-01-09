@@ -1300,6 +1300,25 @@ maximum number of retry attempts that can be made to discover the NVMe device.
 """),
 ]
 
+
+libvirt_pmem_opts = [
+    cfg.ListOpt('pmem_namespace_sizes',
+                item_type=cfg.types.String(),
+                default=[],
+                help="""
+The region name and the namespace sizes of each. The unit is 'MB'.
+e.g. region0:4096|8192|16384,region1:8192|16384
+
+Nova will create multiple namespaces based on these sizes on the region.
+"""),
+    cfg.StrOpt('pmem_namespace_prefix',
+               default='pmem_namespace_',
+               help="""
+This is the default prefix for each pmem namespace name.
+"""),
+]
+
+
 ALL_OPTS = list(itertools.chain(
     libvirt_general_opts,
     libvirt_imagebackend_opts,
@@ -1319,6 +1338,7 @@ ALL_OPTS = list(itertools.chain(
     libvirt_volume_vzstorage_opts,
     libvirt_virtio_queue_sizes,
     libvirt_volume_nvmeof_opts,
+    libvirt_pmem_opts,
 ))
 
 

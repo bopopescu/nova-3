@@ -2462,3 +2462,22 @@ class ReshapeFailed(NovaException):
 class ReshapeNeeded(NovaException):
     msg_fmt = _("Virt driver indicates that provider inventories need to be "
                 "moved.")
+
+
+class PMEMNamespaceNotTracked(NovaException):
+    msg_fmt = _("The PMEM namespace %(namespace)s is not tracked in db.")
+
+
+class PMEMNamespaceNotMatchHost(NovaException):
+    msg_fmt = _("The PMEM namespace %(namespace)s saved in db "
+                "is not match the existed namespace on the host.")
+
+
+class PMEMNamespaceNotMatchConfig(NovaException):
+    msg_fmt = _("The PMEM namespace %(namespace)s saved in db "
+                "is not match the namespace configuration.")
+
+
+class PMEMNamespaceCreateFailed(NovaException):
+    msg_fmt = _("Failed to create the pmem namespace: "
+                "%(error)s")

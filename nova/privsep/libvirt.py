@@ -246,3 +246,30 @@ def unprivileged_umount(mnt_base):
     """Unmount volume"""
     umnt_cmd = ['umount', mnt_base]
     return processutils.execute(*umnt_cmd)
+
+
+@nova.privsep.sys_admin_pctxt.entrypoint
+def get_pmem_namespaces():
+    cmd = (
+        'sudo ndctl list ',
+        '-Xu ',
+    )
+    existed_nss_info = processutils.execute("".join(cmd),
+                                            shell=True)[0]
+    return existed_nss_info if existed_nss_info else '[]'
+
+
+@nova.privsep.sys_admin_pctxt.entrypoint
+def create_pmem_namespace(name, region, size, unit='M', align=2,
+                          mode="devdax", memmap="mem"):
+    cmd = (
+        'sudo ndctl create-namespace ',
+        '-s %(size)s%(unit)s ' % {'size': size, 'unit': unit},
+        '-a %sM ' % align,
+        '-m %s ' % mode,
+        '-M %s ' % memmap,
+        '-r %s ' % region,
+        '-n %s ' % name,
+    )
+    return processutils.execute("".join(cmd),
+                                shell=True)[0]
