@@ -1087,7 +1087,7 @@ object_data = {
     'InstanceList': '2.4-d2c5723da8c1d08e07cb00160edfd292',
     'InstanceMapping': '1.2-3bd375e65c8eb9c45498d2f87b882e03',
     'InstanceMappingList': '1.2-ee638619aa3d8a82a59c0c83bfa64d78',
-    'InstanceNUMACell': '1.4-7c1eb9a198dee076b4de0840e45f4f55',
+    'InstanceNUMACell': '1.5-f81b367a317d85bfe6fee984d09b0792',
     'InstanceNUMATopology': '1.3-ec0030cb0402a49c96da7051c037082a',
     'InstancePCIRequest': '1.3-f6d324f1c337fad4f34892ed5f484c9a',
     'InstancePCIRequests': '1.1-65e38083177726d806684cb1cc0136d2',
@@ -1147,6 +1147,7 @@ object_data = {
     'VirtCPUTopology': '1.0-fc694de72e20298f7c6bab1083fd4563',
     'VirtualInterface': '1.3-efd3ca8ebcc5ce65fff5a25f31754c54',
     'VirtualInterfaceList': '1.0-9750e2074437b3077e46359102779fc6',
+    'VirtualPMEM': '1.0-9c3f14c180ce3f123d1eb376de71dc34',
     'VolumeUsage': '1.0-6c8190c46ce1469bb3286a1f21c2e475',
     'XenDeviceBus': '1.0-272a4f899b24e31e42b2b9a7ed7e9194',
     'XenapiLiveMigrateData': '1.4-7dc9417e921b2953faa6751f18785f3f'
