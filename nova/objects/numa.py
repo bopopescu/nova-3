@@ -39,12 +39,30 @@ def all_things_equal(obj_a, obj_b):
 
 
 @base.NovaObjectRegistry.register
+class PMEMNamespace(base.NovaObject,
+           base.NovaObjectDictCompat):
+    # Version 1.0: Initial version
+    VERSION = "1.0"
+
+    fields = {
+        'uuid': fields.StringField(nullable=True),
+        'name': fields.StringField(nullable=True),
+        'region': fields.IntegerField(nullable=True),
+        'dev': fields.StringField(nullable=True),
+        'size_mb': fields.IntegerField(nullable=True),
+        'alignment': fields.IntegerField(nullable=True),
+        'assigned': fields.BooleanField(default=False),
+    }
+
+
+@base.NovaObjectRegistry.register
 class NUMACell(base.NovaObject):
     # Version 1.0: Initial version
     # Version 1.1: Added pinned_cpus and siblings fields
     # Version 1.2: Added mempages field
     # Version 1.3: Add network_metadata field
-    VERSION = '1.3'
+    # Version 1.4: Add pmem_namespaces field
+    VERSION = '1.4'
 
     fields = {
         'id': fields.IntegerField(read_only=True),
@@ -56,11 +74,14 @@ class NUMACell(base.NovaObject):
         'siblings': fields.ListOfSetsOfIntegersField(),
         'mempages': fields.ListOfObjectsField('NUMAPagesTopology'),
         'network_metadata': fields.ObjectField('NetworkMetadata'),
+        'pmem_namespaces': fields.ListOfObjectsField('PMEMNamespace'),
         }
 
     def obj_make_compatible(self, primitive, target_version):
         super(NUMACell, self).obj_make_compatible(primitive, target_version)
         target_version = versionutils.convert_version_to_tuple(target_version)
+        if target_version < (1, 4):
+            primitive.pop('pmem_namespaces', None)
         if target_version < (1, 3):
             primitive.pop('network_metadata', None)
 

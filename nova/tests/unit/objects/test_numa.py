@@ -228,7 +228,7 @@ class _TestNUMA(object):
                                  siblings=[set([5, 6])])
         self.assertNotEqual(cell1, cell2)
 
-    def test_obj_make_compatible(self):
+    def test_obj_make_compatible_pre_1_3(self):
         network_metadata = objects.NetworkMetadata(
             physnets=set(['foo', 'bar']), tunneled=True)
         cell = objects.NUMACell(id=1, cpuset=set([1, 2]), memory=32,
@@ -244,6 +244,26 @@ class _TestNUMA(object):
         primitive = cell.obj_to_primitive(target_version='1.2',
                                           version_manifest=versions)
         self.assertNotIn('network_metadata', primitive['nova_object.data'])
+
+    def test_obj_make_compatible_pre_1_4(self):
+        fake_obj_pmem_namespaces = [
+            objects.PMEMNamespace(name='ns_1', dev='dev_1',
+                         size_mb=4096, assigned=False),
+            objects.PMEMNamespace(name='ns_2', dev='dev_2',
+                         size_mb=4096, assigned=False)]
+
+        cell = objects.NUMACell(id=1, cpuset=set([1, 2]), memory=32,
+                                cpu_usage=10, pinned_cpus=set([3, 4]),
+                                siblings=[set([5, 6])],
+                                pmem_namespaces = fake_obj_pmem_namespaces)
+        versions = ovo_base.obj_tree_get_versions('NUMACell')
+        primitive = cell.obj_to_primitive(target_version='1.4',
+                                          version_manifest=versions)
+        self.assertIn('pmem_namespaces', primitive['nova_object.data'])
+
+        primitive = cell.obj_to_primitive(target_version='1.3',
+                                          version_manifest=versions)
+        self.assertNotIn('pmem_namespaces', primitive['nova_object.data'])
 
     def test_numa_cell_not_equivalent_missing_a(self):
         cell1 = objects.NUMACell(id=1, cpuset=set([1, 2]), memory=32,
