@@ -494,6 +494,18 @@ class LibvirtDriver(driver.ComputeDriver):
                                   assigned=ns.assigned)
         return pmem_nss_db
 
+    def _get_pmem_nss_groups_by_size(self):
+        pmem_nss_groups = {}
+        if not self._pmem_namespaces:
+            return {}
+        for key in self._pmem_namespaces.keys():
+            for namespace in self._pmem_namespaces[key]:
+                rc_name = "CUSTOM_PMEM_%(size)sMB" % \
+                        {'size': namespace.size_mb}
+                pmem_nss_groups.setdefault(rc_name, [])
+                pmem_nss_groups[rc_name].append(namespace)
+        return pmem_nss_groups
+
     def _create_namespace(self, name, region, size):
         ns_info = nova.privsep.libvirt.create_pmem_namespace(
                 name, region, size)
@@ -6891,6 +6903,18 @@ class LibvirtDriver(driver.ComputeDriver):
             self._update_provider_tree_for_vgpu(
                 inventories_dict, provider_tree, nodename,
                 allocations=allocations)
+
+        pmem_nss_groups = self._get_pmem_nss_groups_by_size()
+        if pmem_nss_groups:
+            for rc_name in pmem_nss_groups.keys():
+                result[rc_name] = {
+                    'total': len(pmem_nss_groups[rc_name]),
+                    'max_unit': len(pmem_nss_groups[rc_name]),
+                    'min_unit': 1,
+                    'step_size': 1,
+                    'allocation_ratio': 1.0,
+                    'reserved': 0
+                }
 
         provider_tree.update_inventory(nodename, result)
 
