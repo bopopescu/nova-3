@@ -15209,7 +15209,8 @@ class LibvirtConnTestCase(test.NoDBTestCase,
 
     # TODO(stephenfin): This only has one caller. Flatten it and remove the
     # 'mempages=False' branches or add the missing test
-    def _test_get_host_numa_topology(self, mempages):
+    @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_pmem_namespaces')
+    def _test_get_host_numa_topology(self, mock_get_pmem_nss, mempages):
         self.flags(physnets=['foo', 'bar', 'baz'], group='neutron')
         # we need to call the below again to ensure the updated 'physnets'
         # value is read and the new groups created
@@ -15228,6 +15229,16 @@ class LibvirtConnTestCase(test.NoDBTestCase,
             for i, cell in enumerate(caps.host.topology.cells):
                 cell.mempages = fakelibvirt.create_mempages(
                     [(4, 1024 * i), (2048, i)])
+
+        mock_get_pmem_nss.return_value = {0: [
+            libvirt_driver.PMEMNamespace(
+                uuid='uuid_0', name='pmem_namespace_region0_0', region=0,
+                dev='dax0.0', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=False),
+            libvirt_driver.PMEMNamespace(
+                uuid='uuid_1', name='pmem_namespace_region0_1', region=0,
+                dev='dax0.1', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=False)]}
 
         drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), False)
 
@@ -15277,6 +15288,7 @@ class LibvirtConnTestCase(test.NoDBTestCase,
             self.assertFalse(got_topo.cells[1].network_metadata.tunneled)
             self.assertTrue(got_topo.cells[2].network_metadata.tunneled)
             self.assertFalse(got_topo.cells[3].network_metadata.tunneled)
+            self.assertEqual(2, len(got_topo.cells[0].pmem_namespaces))
 
     @mock.patch.object(host.Host, 'has_min_version', return_value=True)
     def test_get_host_numa_topology(self, mock_version):

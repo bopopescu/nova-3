@@ -1801,6 +1801,21 @@ def _numa_pagesize_usage_from_cell(hostcell, instancecell, sign):
     return topo
 
 
+def _numa_pmem_nss_usage_from_cell(hostcell, instancecell, sign):
+    if 'virtual_pmems' not in instancecell:
+        return hostcell.pmem_namespaces
+    virtual_pmems = instancecell.virtual_pmems or []
+
+    updated_pmem_nss = []
+    for pmem_ns in hostcell.pmem_namespaces:
+        for vpmem in virtual_pmems:
+            if vpmem.backend_ns_uuid == pmem_ns.uuid and sign:
+                pmem_ns.assigned = True
+        pmem_ns.assigned = pmem_ns.assigned or False
+        updated_pmem_nss.append(pmem_ns)
+    return updated_pmem_nss
+
+
 def numa_usage_from_instances(host, instances, free=False):
     """Get host topology usage.
 
@@ -1831,6 +1846,9 @@ def numa_usage_from_instances(host, instances, free=False):
         if 'network_metadata' in hostcell:
             newcell.network_metadata = hostcell.network_metadata
 
+        if 'pmem_namespaces' in hostcell:
+            newcell.pmem_namespaces = hostcell.pmem_namespaces
+
         for instance in instances:
             for cellid, instancecell in enumerate(instance.cells):
                 if instancecell.id != hostcell.id:
@@ -1856,6 +1874,10 @@ def numa_usage_from_instances(host, instances, free=False):
                 # Compute mempages usage
                 newcell.mempages = _numa_pagesize_usage_from_cell(
                     newcell, instancecell, sign)
+
+                if 'pmem_namespaces' in newcell and newcell.pmem_namespaces:
+                    newcell.pmem_namespaces = _numa_pmem_nss_usage_from_cell(
+                        newcell, instancecell, sign)
 
                 if instance.cpu_pinning_requested:
                     pinned_cpus = set(instancecell.cpu_pinning.values())

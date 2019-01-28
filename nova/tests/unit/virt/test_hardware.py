@@ -1475,6 +1475,70 @@ class NUMATopologyTest(test.NoDBTestCase):
         self.assertEqual(hostusage.cells[2].cpu_usage, 1)
         self.assertEqual(hostusage.cells[2].memory_usage, 256)
 
+    def test_host_usage_with_pmem_nss(self):
+        pmem_nss_cell0 = [
+            objects.PMEMNamespace(
+                uuid='uuid_0', name='name_0', region=0, dev='dax0.0',
+                size_mb=4096, alignment=2097152, assigned=False),
+            objects.PMEMNamespace(
+                uuid='uuid_1', name='name_1', region=0, dev='dax0.1',
+                size_mb=8192, alignment=2097152, assigned=False),
+        ]
+        pmem_nss_cell5 = [
+            objects.PMEMNamespace(
+                uuid='uuid_2', name='name_2', region=1, dev='dax0.2',
+                size_mb=4096, alignment=2097152, assigned=False),
+            objects.PMEMNamespace(
+                uuid='uuid_3', name='name_3', region=1, dev='dax0.3',
+                size_mb=8192, alignment=2097152, assigned=False),
+        ]
+        hosttopo = objects.NUMATopology(cells=[
+            objects.NUMACell(id=0, cpuset=set([0, 1, 2, 3]), memory=1024,
+                             cpu_usage=0, memory_usage=0, mempages=[
+                    objects.NUMAPagesTopology(
+                        size_kb=4, total=512, used=0)],
+                             siblings=[set([0]), set([1]), set([2]), set([3])],
+                             pinned_cpus=set([]),
+                             pmem_namespaces=pmem_nss_cell0),
+            objects.NUMACell(id=5, cpuset=set([4, 6]), memory=512,
+                             cpu_usage=0, memory_usage=0, mempages=[
+                    objects.NUMAPagesTopology(
+                        size_kb=4, total=512, used=0)],
+                             siblings=[set([4]), set([6])],
+                             pinned_cpus=set([]),
+                             pmem_namespaces=pmem_nss_cell5),
+        ])
+
+        vpmems_inst1_cell0 = [
+            objects.VirtualPMEM(id=0, size_mb=4096,
+                                backend_ns_uuid='uuid_0',
+                                backend_dev='dax0.0'),
+            objects.VirtualPMEM(id=1, size_mb=8192,
+                                backend_ns_uuid='uuid_1',
+                                backend_dev='dax0.1'),
+        ]
+
+        instance1 = objects.InstanceNUMATopology(cells=[
+            objects.InstanceNUMACell(id=0, cpuset=set([0, 1]), memory=256,
+                                     cpu_usage=0, memory_usage=0, mempages=[
+                    objects.NUMAPagesTopology(
+                        size_kb=4, total=512, used=0)],
+                                     virtual_pmems=vpmems_inst1_cell0),
+            objects.InstanceNUMACell(id=5, cpuset=set([5, 7]), memory=256,
+                                     cpu_usage=0, memory_usage=0, mempages=[
+                    objects.NUMAPagesTopology(
+                        size_kb=4, total=512, used=0)]),
+        ])
+
+        hostusage = hw.numa_usage_from_instances(
+            hosttopo, [instance1])
+
+        for pmem_ns in hostusage.cells[0].pmem_namespaces:
+            self.assertTrue(pmem_ns.assigned)
+
+        for pmem_ns in hostusage.cells[1].pmem_namespaces:
+            self.assertFalse(pmem_ns.assigned)
+
     def test_host_usage_culmulative_with_free(self):
         hosttopo = objects.NUMATopology(cells=[
             objects.NUMACell(id=0, cpuset=set([0, 1, 2, 3]), memory=1024,
