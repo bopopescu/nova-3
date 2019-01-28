@@ -18055,8 +18055,10 @@ class TestUpdateProviderTree(test.NoDBTestCase):
     @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_vcpu_total',
                 return_value=vcpus)
     def _test_update_provider_tree(self, mock_vcpu, mock_mem, mock_disk,
-                                   mock_vgpus, total_vgpus=0):
+                                   mock_vgpus, total_vgpus=0,
+                                   pmem_nss=None):
         mock_vgpus.return_value = total_vgpus
+        self.driver._pmem_namespaces = pmem_nss
         self.driver.update_provider_tree(self.pt,
                                          self.cn_rp.name)
 
@@ -18077,6 +18079,31 @@ class TestUpdateProviderTree(test.NoDBTestCase):
                                                    'total': 8}
         self.assertEqual(inventory,
                          (self.pt.data(self.cn_rp.uuid)).inventory)
+
+    def test_update_provider_tree_with_pmem(self):
+        pmem_nss = {}
+        pmem_nss[0] = [
+            libvirt_driver.PMEMNamespace(
+                uuid='uuid_0', name='pmem_namespace_region0_0', region=0,
+                dev='dax0.0', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=False),
+            libvirt_driver.PMEMNamespace(
+                uuid='uuid_1', name='pmem_namespace_region0_1', region=0,
+                dev='dax0.1', size_mb=4096, alignment=2097152, numa_node=0,
+                assigned=False)]
+
+        self._test_update_provider_tree(pmem_nss=pmem_nss)
+        inventory = self._get_inventory()
+        inventory["CUSTOM_PMEM_4096MB"] = {
+            'total': 2,
+            'max_unit': 2,
+            'min_unit': 1,
+            'step_size': 1,
+            'allocation_ratio': 1.0,
+            'reserved': 0
+        }
+        self.assertEqual(inventory,
+                         (self.pt.data(self.cn_rp['uuid'])).inventory)
 
     @mock.patch('nova.virt.libvirt.driver.LibvirtDriver._get_vgpu_total',
                 return_value=0)
