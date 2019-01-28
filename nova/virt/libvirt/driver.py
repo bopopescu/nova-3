@@ -6646,8 +6646,26 @@ class LibvirtDriver(driver.ComputeDriver):
 
             return affinities
 
+        def _get_pmem_ns_obj_list_by_cell():
+            pmem_ns_obj_list_by_cell = {}
+            if self._pmem_namespaces:
+                for cell_id in self._pmem_namespaces.keys():
+                    pmem_ns_obj_list_by_cell.setdefault(cell_id, [])
+                    for pmem_ns in self._pmem_namespaces[cell_id]:
+                        pmem_ns_obj = objects.PMEMNamespace(
+                            uuid=pmem_ns.uuid,
+                            name=pmem_ns.name,
+                            region=pmem_ns.region,
+                            dev=pmem_ns.dev,
+                            size_mb=pmem_ns.size_mb,
+                            alignment=pmem_ns.alignment,
+                            assigned=pmem_ns.assigned)
+                        pmem_ns_obj_list_by_cell[cell_id].append(pmem_ns_obj)
+            return pmem_ns_obj_list_by_cell
+
         physnet_affinities = _get_physnet_numa_affinity()
         tunnel_affinities = _get_tunnel_numa_affinity()
+        pmem_ns_obj_list_by_cell = _get_pmem_ns_obj_list_by_cell()
 
         for cell in topology.cells:
             cpuset = set(cpu.id for cpu in cell.cpus)
@@ -6674,13 +6692,16 @@ class LibvirtDriver(driver.ComputeDriver):
                 physnets=physnet_affinities[cell.id],
                 tunneled=tunnel_affinities[cell.id])
 
+            pmem_namespaces = pmem_ns_obj_list_by_cell.get(cell.id, [])
+
             cell = objects.NUMACell(id=cell.id, cpuset=cpuset,
                                     memory=cell.memory / units.Ki,
                                     cpu_usage=0, memory_usage=0,
                                     siblings=siblings,
                                     pinned_cpus=set([]),
                                     mempages=mempages,
-                                    network_metadata=network_metadata)
+                                    network_metadata=network_metadata,
+                                    pmem_namespaces=pmem_namespaces)
             cells.append(cell)
 
         return objects.NUMATopology(cells=cells)
