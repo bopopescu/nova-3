@@ -53,8 +53,10 @@ class TestUtils(test.NoDBTestCase):
         return image
 
     def _test_resources_from_request_spec(self, expected, flavor,
-                                          image=objects.ImageMeta()):
+                                          image=objects.ImageMeta(),
+                                          numa_topology=None):
         fake_spec = objects.RequestSpec(flavor=flavor, image=image)
+        fake_spec.numa_topology = numa_topology
         resources = utils.resources_from_request_spec(
             self.context, fake_spec, self.mock_host_manager)
         self.assertResourceRequestsEqual(expected, resources)
@@ -847,6 +849,56 @@ class TestUtils(test.NoDBTestCase):
         self.assertResourceRequestsEqual(
             expected, utils.ResourceRequest.from_image_props(image_meta_props,
                                                              req=existing_req))
+
+    def test_resource_request_from_instance_numa_topology(self):
+        instance_topo = objects.InstanceNUMATopology(
+            cells=[
+                objects.InstanceNUMACell(
+                    virtual_pmems=[
+                        objects.VirtualPMEM(
+                            size_mb=4096
+                        ),
+                        objects.VirtualPMEM(
+                            size_mb=8192
+                        )
+                    ]
+                ),
+                objects.InstanceNUMACell(
+                    virtual_pmems=[
+                        objects.VirtualPMEM(
+                            size_mb=4096
+                        ),
+                        objects.VirtualPMEM(
+                            size_mb=8192
+                        )
+                    ]
+                )
+            ]
+        )
+
+        existing_req = utils.ResourceRequest()
+        existing_req._rg_by_id[None] = objects.RequestGroup(
+            use_same_provider=False,
+            resources={
+                'VCPU': 2,
+                'MEMORY_MB': 2048,
+                'DISK_GB': 1000,
+                'CUSTOM_PMEM_4096MB': 2,
+                'CUSTOM_PMEM_8192MB': 2
+            }
+        )
+
+        expected_req = utils.ResourceRequest()
+        expected_req._rg_by_id[None] = existing_req._rg_by_id[None]
+
+        flavor = objects.Flavor(vcpus=2,
+                                memory_mb=2048,
+                                root_gb=1000,
+                                ephemeral_gb=0,
+                                swap=0)
+
+        self._test_resources_from_request_spec(expected_req, flavor,
+            numa_topology=instance_topo)
 
     def test_resource_request_add_group_inserts_the_group(self):
         req = utils.ResourceRequest()

@@ -207,6 +207,29 @@ class ResourceRequest(object):
 
         return ret
 
+    @classmethod
+    def from_instance_numa_topology(cls, instance_numa_topo, req=None):
+        if req is not None:
+            req = req
+        else:
+            req = cls()
+
+        grp = req.get_request_group(None)
+
+        # We just translate virtual pmem request to flat resource request.
+        # Then we can take the NUMA affinity into consideration
+        # through scheduler numa_topology filter.
+        vpmems_sizes_num = {}
+        for cell in instance_numa_topo.cells:
+            for vpmem in cell.virtual_pmems:
+                rc_name = "CUSTOM_PMEM_%(size)sMB" % \
+                          {'size': vpmem.size_mb}
+                vpmems_sizes_num.setdefault(rc_name, 0)
+                vpmems_sizes_num[rc_name] += 1
+        for rc_name in vpmems_sizes_num:
+            grp.resources[rc_name] = vpmems_sizes_num[rc_name]
+        return req
+
     def resource_groups(self):
         for rg in self._rg_by_id.values():
             yield rg.resources
@@ -506,6 +529,10 @@ def resources_from_request_spec(ctxt, spec_obj, host_manager):
                 grp = res_req.get_request_group(None)
                 grp.aggregates = [ored.split(',')
                                   for ored in destination.aggregates]
+
+    if 'numa_topology' in spec_obj and spec_obj.numa_topology:
+        res_req = ResourceRequest.from_instance_numa_topology(
+            spec_obj.numa_topology, res_req)
 
     if 'force_hosts' in spec_obj and spec_obj.force_hosts:
         # Prioritize the value from requested_destination just in case
