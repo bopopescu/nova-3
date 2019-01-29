@@ -742,7 +742,8 @@ class ServersController(wsgi.Controller):
                 exception.UnableToAutoAllocateNetwork,
                 exception.MultiattachNotSupportedOldMicroversion,
                 exception.CertificateValidationFailed,
-                exception.CreateWithPortResourceRequestOldVersion) as error:
+                exception.CreateWithPortResourceRequestOldVersion,
+                exception.InvalidNUMAVPMEMSize) as error:
             raise exc.HTTPBadRequest(explanation=error.format_message())
         except INVALID_FLAVOR_IMAGE_EXCEPTIONS as error:
             raise exc.HTTPBadRequest(explanation=error.format_message())

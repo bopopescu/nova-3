@@ -441,6 +441,12 @@ class InvalidNUMANodesNumber(Invalid):
                 "It must be a number greater than 0")
 
 
+class InvalidNUMAVPMEMSize(Invalid):
+    msg_fmt = _("The property about 'numa_pmem' cannot be '%(pmem_size)s'. "
+                "It must match the pattern (size)(MB|GB|TB) and the size "
+                "must be a number greater than 0.")
+
+
 class InvalidName(Invalid):
     msg_fmt = _("An invalid 'name' value was provided. "
                 "The name must be: %(reason)s")
