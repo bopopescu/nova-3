@@ -15,6 +15,7 @@
 import collections
 import fractions
 import itertools
+import re
 
 from oslo_log import log as logging
 from oslo_serialization import jsonutils
@@ -1183,6 +1184,17 @@ def _get_numa_pagesize_constraint(flavor, image_meta):
     return pagesize
 
 
+def _get_numa_pmem_size_constraint(flavor):
+    pmem_size = flavor.get('extra_specs', {}).get('hw:numa_pmem')
+
+    if pmem_size:
+        size_mb = re.match('^([0-9]\d*)', pmem_size)
+        if size_mb is None or int(size_mb.group()) < 1:
+            raise exception.InvalidNUMAVPMEMSize(pmem_size=pmem_size)
+
+    return pmem_size
+
+
 def _get_constraint_mappings_from_flavor(flavor, key, func):
     hw_numa_map = []
     extra_specs = flavor.get('extra_specs', {})
@@ -1253,6 +1265,25 @@ def _get_numa_mem_constraint(flavor, image_meta):
             name='hw_numa_mem')
 
     return flavor_mem_list
+
+
+def _get_numa_pmems_constrait(flavor):
+    metadata = flavor.get('extra_specs', {})
+    key_prefix = 'hw:numa_pmem'
+
+    pmem_list = collections.defaultdict(dict)
+    for key in metadata:
+        result = re.match('^(%s)\.([0-9]\d*)\.([0-9]\d*)$' % key_prefix, key)
+        if result:
+            size_mb = re.match('^([0-9]\d*)', metadata[key])
+            if size_mb is None or int(size_mb.group()) < 1:
+                raise exception.InvalidNUMAVPMEM(pmem=key, size=metadata[key])
+            cell_id = int(result.groups()[1])
+            pmem_index = int(result.groups()[2])
+            pmem_list[cell_id][pmem_index] = metadata[key]
+
+    return [[pmem_list[i][j] for j in sorted(pmem_list[i].keys())]
+            for i in sorted(pmem_list.keys())]
 
 
 def _get_numa_node_count_constraint(flavor, image_meta):
@@ -1331,7 +1362,7 @@ def _get_cpu_thread_policy_constraint(flavor, image_meta):
     return policy
 
 
-def _get_numa_topology_auto(nodes, flavor):
+def _get_numa_topology_auto(nodes, pmem_size, flavor):
     if ((flavor.vcpus % nodes) > 0 or
         (flavor.memory_mb % nodes) > 0):
         raise exception.ImageNUMATopologyAsymmetric()
@@ -1343,13 +1374,21 @@ def _get_numa_topology_auto(nodes, flavor):
         start = node * ncpus
         cpuset = set(range(start, start + ncpus))
 
+        virtual_pmems = None
+        if pmem_size:
+            size_mb = re.match('^([0-9]\d*)', pmem_size)
+            size_mb = int(size_mb.group())
+            virtual_pmems = [objects.VirtualPMEM(id=0,
+                size_mb=int(size_mb / nodes))]
+
         cells.append(objects.InstanceNUMACell(
-            id=node, cpuset=cpuset, memory=mem))
+            id=node, cpuset=cpuset, memory=mem,
+            virtual_pmems=virtual_pmems))
 
     return objects.InstanceNUMATopology(cells=cells)
 
 
-def _get_numa_topology_manual(nodes, flavor, cpu_list, mem_list):
+def _get_numa_topology_manual(nodes, flavor, cpu_list, mem_list, pmem_list):
     cells = []
     totalmem = 0
 
@@ -1358,6 +1397,7 @@ def _get_numa_topology_manual(nodes, flavor, cpu_list, mem_list):
     for node in range(nodes):
         mem = mem_list[node]
         cpuset = cpu_list[node]
+        pmems = [] if not pmem_list else pmem_list[node]
 
         for cpu in cpuset:
             if cpu > (flavor.vcpus - 1):
@@ -1370,8 +1410,16 @@ def _get_numa_topology_manual(nodes, flavor, cpu_list, mem_list):
 
             availcpus.remove(cpu)
 
+        virtual_pmems = []
+        for pmem_index in range(len(pmems)):
+            size_mb = re.match('^([0-9]\d*)', pmems[pmem_index])
+            size_mb = int(size_mb.group())
+            virtual_pmems.append(
+                objects.VirtualPMEM(id=pmem_index, size_mb=size_mb))
+
         cells.append(objects.InstanceNUMACell(
-            id=node, cpuset=cpuset, memory=mem))
+            id=node, cpuset=cpuset, memory=mem,
+            virtual_pmems=virtual_pmems))
         totalmem = totalmem + mem
 
     if availcpus:
@@ -1497,14 +1545,16 @@ def numa_get_constraints(flavor, image_meta):
 
     nodes = _get_numa_node_count_constraint(flavor, image_meta)
     pagesize = _get_numa_pagesize_constraint(flavor, image_meta)
+    pmemsize = _get_numa_pmem_size_constraint(flavor)
 
-    if nodes or pagesize:
+    if nodes or pagesize or pmemsize:
         nodes = nodes or 1
 
         cpu_list = _get_numa_cpu_constraint(flavor, image_meta)
         mem_list = _get_numa_mem_constraint(flavor, image_meta)
+        pmem_list = _get_numa_pmems_constrait(flavor)
 
-        # If one property list is specified both must be
+        # If one property list is specified all must be
         if ((cpu_list is None and mem_list is not None) or
             (cpu_list is not None and mem_list is None)):
             raise exception.ImageNUMATopologyIncomplete()
@@ -1516,10 +1566,10 @@ def numa_get_constraints(flavor, image_meta):
 
         if cpu_list is None:
             numa_topology = _get_numa_topology_auto(
-                nodes, flavor)
+                nodes, pmemsize, flavor)
         else:
             numa_topology = _get_numa_topology_manual(
-                nodes, flavor, cpu_list, mem_list)
+                nodes, flavor, cpu_list, mem_list, pmem_list)
 
         # We currently support same pagesize for all cells.
         for c in numa_topology.cells:
@@ -1557,7 +1607,8 @@ def numa_get_constraints(flavor, image_meta):
             cpuset=set(range(flavor.vcpus)),
             memory=flavor.memory_mb,
             cpu_policy=cpu_policy,
-            cpu_thread_policy=cpu_thread_policy)
+            cpu_thread_policy=cpu_thread_policy,
+            virtual_pmems=None)
         numa_topology = objects.InstanceNUMATopology(cells=[single_cell])
 
     if emu_threads_policy:

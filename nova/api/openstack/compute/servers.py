@@ -648,7 +648,9 @@ class ServersController(wsgi.Controller):
                 exception.SnapshotNotFound,
                 exception.UnableToAutoAllocateNetwork,
                 exception.MultiattachNotSupportedOldMicroversion,
-                exception.CertificateValidationFailed) as error:
+                exception.CertificateValidationFailed,
+                exception.InvalidNUMAVPMEMSize,
+                exception.InvalidNUMAVPMEM) as error:
             raise exc.HTTPBadRequest(explanation=error.format_message())
         except (exception.PortInUse,
                 exception.InstanceExists,

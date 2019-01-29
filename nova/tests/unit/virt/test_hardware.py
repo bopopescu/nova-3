@@ -823,16 +823,21 @@ class NUMATopologyTest(test.NoDBTestCase):
             },
             {
                 "flavor": objects.Flavor(vcpus=8, memory_mb=2048, extra_specs={
-                    "hw:numa_nodes": 2
+                    "hw:numa_nodes": 2,
+                    "hw:numa_pmem": "512"
                 }),
                 "image": {
                 },
                 "expect": objects.InstanceNUMATopology(cells=
                     [
                         objects.InstanceNUMACell(
-                            id=0, cpuset=set([0, 1, 2, 3]), memory=1024),
+                            id=0, cpuset=set([0, 1, 2, 3]), memory=1024,
+                            virtual_pmems=[objects.VirtualPMEM(id=0,
+                                                               size_mb=256)]),
                         objects.InstanceNUMACell(
-                            id=1, cpuset=set([4, 5, 6, 7]), memory=1024),
+                            id=1, cpuset=set([4, 5, 6, 7]), memory=1024,
+                            virtual_pmems=[objects.VirtualPMEM(id=0,
+                                                               size_mb=256)]),
                     ]),
             },
             {
@@ -844,7 +849,22 @@ class NUMATopologyTest(test.NoDBTestCase):
                 "expect": objects.InstanceNUMATopology(cells=[
                         objects.InstanceNUMACell(
                             id=0, cpuset=set([0, 1, 2, 3, 4, 5, 6, 7]),
-                            memory=2048, pagesize=2048)
+                            memory=2048, pagesize=2048,
+                            virtual_pmems=None)
+                    ]),
+            },
+            {
+                "flavor": objects.Flavor(vcpus=8, memory_mb=2048, extra_specs={
+                    "hw:numa_pmem": "512"
+                }),
+                "image": {
+                },
+                "expect": objects.InstanceNUMATopology(cells=[
+                        objects.InstanceNUMACell(
+                            id=0, cpuset=set([0, 1, 2, 3, 4, 5, 6, 7]),
+                            memory=2048,
+                            virtual_pmems=[objects.VirtualPMEM(id=0,
+                                                               size_mb=512)])
                     ]),
             },
             {
@@ -896,17 +916,28 @@ class NUMATopologyTest(test.NoDBTestCase):
                     "hw:numa_mem.1": "512",
                     "hw:numa_cpus.2": "5,7",
                     "hw:numa_mem.2": "512",
+                    "hw:numa_pmem.0.0": "128",
+                    "hw:numa_pmem.0.1": "128",
+                    "hw:numa_pmem.1.0": "128",
+                    "hw:numa_pmem.2.0": "64",
                 }),
                 "image": {
                 },
                 "expect": objects.InstanceNUMATopology(cells=
                     [
                         objects.InstanceNUMACell(
-                            id=0, cpuset=set([0, 1, 2, 3]), memory=1024),
+                            id=0, cpuset=set([0, 1, 2, 3]), memory=1024,
+                            virtual_pmems=[
+                                objects.VirtualPMEM(id=0, size_mb=128),
+                                objects.VirtualPMEM(id=1, size_mb=128)]),
                         objects.InstanceNUMACell(
-                            id=1, cpuset=set([4, 6]), memory=512),
+                            id=1, cpuset=set([4, 6]), memory=512,
+                            virtual_pmems=[
+                                objects.VirtualPMEM(id=0, size_mb=128)]),
                         objects.InstanceNUMACell(
-                            id=2, cpuset=set([5, 7]), memory=512)
+                            id=2, cpuset=set([5, 7]), memory=512,
+                            virtual_pmems=[
+                                objects.VirtualPMEM(id=0, size_mb=64)])
                     ]),
             },
             {
@@ -926,11 +957,14 @@ class NUMATopologyTest(test.NoDBTestCase):
                 "expect": objects.InstanceNUMATopology(cells=
                     [
                         objects.InstanceNUMACell(
-                            id=0, cpuset=set([0, 1, 2, 3]), memory=1024),
+                            id=0, cpuset=set([0, 1, 2, 3]), memory=1024,
+                            virtual_pmems=None),
                         objects.InstanceNUMACell(
-                            id=1, cpuset=set([4, 6]), memory=512),
+                            id=1, cpuset=set([4, 6]), memory=512,
+                            virtual_pmems=None),
                         objects.InstanceNUMACell(
-                            id=2, cpuset=set([5, 7]), memory=512)
+                            id=2, cpuset=set([5, 7]), memory=512,
+                            virtual_pmems=None)
                     ]),
             },
             {
@@ -1051,10 +1085,12 @@ class NUMATopologyTest(test.NoDBTestCase):
                     [
                         objects.InstanceNUMACell(
                             id=0, cpuset=set([0, 1]), memory=1024,
-                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED),
+                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED,
+                            virtual_pmems=None),
                         objects.InstanceNUMACell(
                             id=1, cpuset=set([2, 3]), memory=1024,
-                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED)])
+                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED,
+                            virtual_pmems=None)])
             },
             {
                 # no NUMA + CPU pinning requested in the flavor
@@ -1068,7 +1104,8 @@ class NUMATopologyTest(test.NoDBTestCase):
                     [
                         objects.InstanceNUMACell(
                             id=0, cpuset=set([0, 1, 2, 3]), memory=2048,
-                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED)])
+                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED,
+                            virtual_pmems=None)])
             },
             {
                 # NUMA + CPU pinning requested in the image
@@ -1084,10 +1121,12 @@ class NUMATopologyTest(test.NoDBTestCase):
                     [
                         objects.InstanceNUMACell(
                             id=0, cpuset=set([0, 1]), memory=1024,
-                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED),
+                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED,
+                            virtual_pmems=None),
                         objects.InstanceNUMACell(
                             id=1, cpuset=set([2, 3]), memory=1024,
-                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED)])
+                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED,
+                            virtual_pmems=None)])
             },
             {
                 # no NUMA + CPU pinning requested in the image
@@ -1101,7 +1140,8 @@ class NUMATopologyTest(test.NoDBTestCase):
                     [
                         objects.InstanceNUMACell(
                             id=0, cpuset=set([0, 1, 2, 3]), memory=2048,
-                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED)])
+                            cpu_policy=fields.CPUAllocationPolicy.DEDICATED,
+                            virtual_pmems=None)])
             },
             {
                 # Invalid CPU pinning override
@@ -1162,7 +1202,8 @@ class NUMATopologyTest(test.NoDBTestCase):
                             id=0, cpuset=set([0, 1, 2, 3]), memory=2048,
                             cpu_policy=fields.CPUAllocationPolicy.DEDICATED,
                             cpu_thread_policy=
-                                fields.CPUThreadAllocationPolicy.PREFER)])
+                                fields.CPUThreadAllocationPolicy.PREFER,
+                            virtual_pmems=None)])
             },
             {
                 # Invalid CPU pinning policy with CPU thread pinning
@@ -1226,6 +1267,7 @@ class NUMATopologyTest(test.NoDBTestCase):
                         objects.InstanceNUMACell(
                             id=0, cpuset=set([0, 1, 2, 3]), memory=2048,
                             cpu_policy=fields.CPUAllocationPolicy.DEDICATED,
+                            virtual_pmems=None
                         )]),
             },
             {   # We request a valid emulator threads options with cpu
@@ -1246,6 +1288,7 @@ class NUMATopologyTest(test.NoDBTestCase):
                         objects.InstanceNUMACell(
                             id=0, cpuset=set([0, 1, 2, 3]), memory=2048,
                             cpu_policy=fields.CPUAllocationPolicy.DEDICATED,
+                            virtual_pmems=None
                         )]),
             },
 
@@ -1272,7 +1315,8 @@ class NUMATopologyTest(test.NoDBTestCase):
                     testitem["expect"].emulator_threads_isolated,
                     topology.emulator_threads_isolated)
 
-                for i in range(len(topology.cells)):
+                for cell in topology.cells:
+                    i = cell.id
                     self.assertEqual(testitem["expect"].cells[i].id,
                                      topology.cells[i].id)
                     self.assertEqual(testitem["expect"].cells[i].cpuset,
@@ -1283,6 +1327,24 @@ class NUMATopologyTest(test.NoDBTestCase):
                                      topology.cells[i].pagesize)
                     self.assertEqual(testitem["expect"].cells[i].cpu_pinning,
                                      topology.cells[i].cpu_pinning)
+
+                    if not topology.cells[i].virtual_pmems:
+                        self.assertIsNone(
+                            testitem["expect"].cells[i].virtual_pmems)
+                    else:
+                        self.assertEqual(
+                            len(testitem["expect"].cells[i].virtual_pmems),
+                            len(topology.cells[i].virtual_pmems))
+                        for j in range(len(topology.cells[i].get(
+                                'virtual_pmems', []))):
+                            cell_expected = testitem["expect"].cells[i]
+                            vpmem_expected = cell_expected.virtual_pmems[j]
+                            cell = topology.cells[i]
+                            vpmem = cell.virtual_pmems[j]
+                            self.assertEqual(vpmem_expected.size_mb,
+                                             vpmem.size_mb)
+                            self.assertEqual(vpmem_expected.id,
+                                             vpmem.id)
 
     def test_host_usage_contiguous(self):
         hosttopo = objects.NUMATopology(cells=[
