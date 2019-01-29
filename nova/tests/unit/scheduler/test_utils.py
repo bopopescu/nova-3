@@ -51,8 +51,10 @@ class TestUtils(test.NoDBTestCase):
         return image
 
     def _test_resources_from_request_spec(self, expected, flavor,
-                                          image=objects.ImageMeta()):
+                                          image=objects.ImageMeta(),
+                                          numa_topology=None):
         fake_spec = objects.RequestSpec(flavor=flavor, image=image)
+        fake_spec.numa_topology = numa_topology
         resources = utils.resources_from_request_spec(fake_spec)
         self.assertResourceRequestsEqual(expected, resources)
         return resources
@@ -766,6 +768,60 @@ class TestUtils(test.NoDBTestCase):
         }
         utils.merge_resources(resources, new_resources, -1)
         self.assertEqual(merged, resources)
+
+    def test_resource_request_from_instance_numa_topology(self):
+        instance_topo = objects.InstanceNUMATopology(
+            cells=[
+                objects.InstanceNUMACell(
+                    virtual_pmems=[
+                        objects.VirtualPMEM(
+                            id=0,
+                            size_mb=1
+                        ),
+                        objects.VirtualPMEM(
+                            id=1,
+                            size_mb=2
+                        )
+                    ]
+                ),
+                objects.InstanceNUMACell(
+                    virtual_pmems=[
+                        objects.VirtualPMEM(
+                            id=0,
+                            size_mb=1
+                        ),
+                        objects.VirtualPMEM(
+                            id=1,
+                            size_mb=2
+                        )
+                    ]
+                )
+            ]
+        )
+
+        existing_req = utils.ResourceRequest()
+        existing_req._rg_by_id[None] = objects.RequestGroup(
+            use_same_provider=False,
+            resources={
+                'VCPU': 2,
+                'MEMORY_MB': 2048,
+                'DISK_GB': 1000,
+                'CUSTOM_PMEM_1MB': 2,
+                'CUSTOM_PMEM_2MB': 2
+            }
+        )
+
+        expected_req = utils.ResourceRequest()
+        expected_req._rg_by_id[None] = existing_req._rg_by_id[None]
+
+        flavor = objects.Flavor(vcpus=2,
+                                memory_mb=2048,
+                                root_gb=1000,
+                                ephemeral_gb=0,
+                                swap=0)
+
+        self._test_resources_from_request_spec(expected_req, flavor,
+            numa_topology=instance_topo)
 
     def test_claim_resources_on_destination_no_source_allocations(self):
         """Tests the negative scenario where the instance does not have
