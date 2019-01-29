@@ -1110,6 +1110,35 @@ def _numa_fit_instance_cell(host_cell, instance_cell, limit_cell=None,
                       {'usage': cpu_usage, 'limit': cpu_limit})
             return
 
+    if 'virtual_pmems' in instance_cell and instance_cell.virtual_pmems:
+        if not host_cell.pmem_namespaces:
+            return
+        vpmems = instance_cell.virtual_pmems
+        available_pmem_nss = []
+        for pmem_ns in host_cell.pmem_namespaces:
+            if not pmem_ns.assigned:
+                available_pmem_nss.append(pmem_ns)
+        match = False
+        for pmem_nss_perm in itertools.combinations(
+                available_pmem_nss, len(vpmems)):
+            pmem_nss_perm = list(pmem_nss_perm)
+            pmem_nss_perm.sort(key=lambda x: x.size_mb)
+            vpmems.sort(key=lambda x: x.size_mb)
+            match = True
+            for i in range(len(pmem_nss_perm)):
+                if not pmem_nss_perm[i].size_mb == vpmems[i].size_mb:
+                    match = False
+                    break
+            if not match:
+                continue
+            for i in range(len(pmem_nss_perm)):
+                vpmems[i].backend_ns_uuid = pmem_nss_perm[i].uuid
+                vpmems[i].backend_dev = pmem_nss_perm[i].dev
+            instance_cell.virtual_pmems = vpmems
+            break
+        if not match:
+            return
+
     instance_cell.id = host_cell.id
     return instance_cell
 

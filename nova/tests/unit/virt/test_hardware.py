@@ -1924,6 +1924,147 @@ class VirtNUMATopologyCellUsageTestCase(test.NoDBTestCase):
                 host_cell, instance_cell, limit_cell=limit_cell)
         self.assertIsNone(fitted_cell)
 
+    def test_fit_instance_cell_success_with_vpmems_0(self):
+        pmem_namespaces = [
+            objects.PMEMNamespace(uuid='uuid_0',
+                                  name='name_0',
+                                  region=0,
+                                  dev='dax0.0',
+                                  size_mb=4096,
+                                  alignment=2097152,
+                                  assigned=False),
+            objects.PMEMNamespace(uuid='uuid_1',
+                                  name='name_1',
+                                  region=0,
+                                  dev='dax0.1',
+                                  size_mb=8192,
+                                  alignment=2097152,
+                                  assigned=False)]
+        host_cell = objects.NUMACell(id=4, cpuset=set([1, 2]), memory=1024,
+                                     cpu_usage=0, memory_usage=0, mempages=[
+                                        objects.NUMAPagesTopology(
+                                        size_kb=4, total=524288, used=0)],
+                                     siblings=[set([1]), set([2])],
+                                     pinned_cpus=set([]),
+                                     pmem_namespaces=pmem_namespaces)
+
+        vpmems = [
+            objects.VirtualPMEM(id=0, size_mb=4096),
+            objects.VirtualPMEM(id=1, size_mb=8192)]
+        instance_cell = objects.InstanceNUMACell(
+            id=0, cpuset=set([1, 2]), memory=1024, virtual_pmems=vpmems)
+
+        fitted_cell = hw._numa_fit_instance_cell(host_cell, instance_cell)
+        self.assertIsInstance(fitted_cell, objects.InstanceNUMACell)
+        self.assertEqual(host_cell.id, fitted_cell.id)
+        for i in range(2):
+            self.assertEqual(host_cell.pmem_namespaces[i].uuid,
+                             fitted_cell.virtual_pmems[i].backend_ns_uuid)
+            self.assertEqual(host_cell.pmem_namespaces[i].dev,
+                             fitted_cell.virtual_pmems[i].backend_dev)
+
+    def test_fit_instance_cell_success_with_vpmems_1(self):
+            pmem_namespaces = [
+                objects.PMEMNamespace(uuid='uuid_0',
+                                      name='name_0',
+                                      region=0,
+                                      dev='dax0.0',
+                                      size_mb=4096,
+                                      alignment=2097152,
+                                      assigned=False),
+                objects.PMEMNamespace(uuid='uuid_1',
+                                      name='name_1',
+                                      region=0,
+                                      dev='dax0.1',
+                                      size_mb=8192,
+                                      alignment=2097152,
+                                      assigned=False),
+                objects.PMEMNamespace(uuid='uuid_2',
+                                      name='name_2',
+                                      region=0,
+                                      dev='dax0.2',
+                                      size_mb=8192,
+                                      alignment=2097152,
+                                      assigned=False)]
+            host_cell = objects.NUMACell(
+                    id=4, cpuset=set([1, 2]), memory=1024,
+                    cpu_usage=0, memory_usage=0,
+                    mempages=[objects.NUMAPagesTopology(size_kb=4,
+                                                        total=524288,
+                                                        used=0)],
+                    siblings=[set([1]), set([2])],
+                    pinned_cpus=set([]),
+                    pmem_namespaces=pmem_namespaces)
+
+            vpmems = [
+                objects.VirtualPMEM(id=0, size_mb=4096),
+                objects.VirtualPMEM(id=1, size_mb=8192)]
+            instance_cell = objects.InstanceNUMACell(
+                id=0, cpuset=set([1, 2]), memory=1024, virtual_pmems=vpmems)
+
+            fitted_cell = hw._numa_fit_instance_cell(host_cell, instance_cell)
+            self.assertIsInstance(fitted_cell, objects.InstanceNUMACell)
+            self.assertEqual(host_cell.id, fitted_cell.id)
+            self.assertEqual('uuid_0',
+                             fitted_cell.virtual_pmems[0].backend_ns_uuid)
+            self.assertEqual('dax0.0',
+                             fitted_cell.virtual_pmems[0].backend_dev)
+            self.assertIn(fitted_cell.virtual_pmems[1].backend_ns_uuid,
+                          ['uuid_1', 'uuid_2'])
+            self.assertIn(fitted_cell.virtual_pmems[1].backend_dev,
+                          ['dax0.1', 'dax0.2'])
+
+    def test_fit_instance_cell_fail_with_vpmems_0(self):
+        pmem_namespaces = [
+            objects.PMEMNamespace(uuid='uuid_0',
+                                  name='name_0',
+                                  region=0,
+                                  dev='dax0.0',
+                                  size_mb=4096,
+                                  alignment=2097152,
+                                  assigned=False),
+            objects.PMEMNamespace(uuid='uuid_1',
+                                  name='name_1',
+                                  region=0,
+                                  dev='dax0.1',
+                                  size_mb=8192,
+                                  alignment=2097152,
+                                  assigned=False)]
+        host_cell = objects.NUMACell(id=4, cpuset=set([1, 2]), memory=1024,
+                                     cpu_usage=0, memory_usage=0, mempages=[
+                objects.NUMAPagesTopology(
+                    size_kb=4, total=524288, used=0)],
+                                     siblings=[set([1]), set([2])],
+                                     pinned_cpus=set([]),
+                                     pmem_namespaces=pmem_namespaces)
+
+        vpmems = [
+            objects.VirtualPMEM(id=0, size_mb=1024),
+            objects.VirtualPMEM(id=1, size_mb=2048)]
+        instance_cell = objects.InstanceNUMACell(
+            id=0, cpuset=set([1, 2]), memory=1024, virtual_pmems=vpmems)
+
+        fitted_cell = hw._numa_fit_instance_cell(host_cell, instance_cell)
+        self.assertIsNone(fitted_cell)
+
+    def test_fit_instance_cell_fail_with_vpmems_1(self):
+        host_cell = objects.NUMACell(id=4, cpuset=set([1, 2]), memory=1024,
+                                     cpu_usage=0, memory_usage=0, mempages=[
+                objects.NUMAPagesTopology(
+                    size_kb=4, total=524288, used=0)],
+                                     siblings=[set([1]), set([2])],
+                                     pinned_cpus=set([]),
+                                     pmem_namespaces=[])
+
+        vpmems = [
+            objects.VirtualPMEM(id=0, size_mb=1024),
+            objects.VirtualPMEM(id=1, size_mb=4096)]
+        instance_cell = objects.InstanceNUMACell(
+            id=0, cpuset=set([1, 2]), memory=1024, virtual_pmems=vpmems)
+
+        fitted_cell = hw._numa_fit_instance_cell(host_cell, instance_cell)
+        self.assertIsNone(fitted_cell)
+
 
 class VirtNUMAHostTopologyTestCase(test.NoDBTestCase):
     def setUp(self):
