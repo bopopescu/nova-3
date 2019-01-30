@@ -273,3 +273,11 @@ def create_pmem_namespace(name, region, size, unit='M', align=2,
     )
     return processutils.execute("".join(cmd),
                                 shell=True)[0]
+
+
+@nova.privsep.sys_admin_pctxt.entrypoint
+def cleanup_vpmem(dev):
+    cmd = (
+        'sudo daxio -z -o /dev/%s ' % dev,
+    )
+    processutils.execute("".join(cmd), shell=True, check_exit_code=0)

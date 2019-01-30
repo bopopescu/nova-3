@@ -18043,6 +18043,34 @@ class LibvirtConnTestCase(test.NoDBTestCase,
         else:
             assert False, "Unable to find any mediated device for the guest."
 
+    def test_get_guest_config_with_vpmems(self):
+        drvr = libvirt_driver.LibvirtDriver(fake.FakeVirtAPI(), True)
+        instance_ref = objects.Instance(**self.test_instance)
+        image_meta = objects.ImageMeta.from_dict(self.test_image_meta)
+        instance_topology = objects.InstanceNUMATopology(
+            cells=[objects.InstanceNUMACell(
+                id=0,
+                cpuset=set([0]),
+                memory=1024,
+                virtual_pmems=[
+                    objects.VirtualPMEM(
+                        size_mb=4096,
+                        backend_dev="dax0.0",
+                        backend_ns_uuid=uuids.ns0)])
+            ]
+        )
+        instance_ref.numa_topology = instance_topology
+        cfg = drvr._get_guest_config(instance_ref,
+                                     _fake_network_info(self, 1),
+                                     image_meta, {'mapping': {}})
+        for device in cfg.devices:
+            if isinstance(device, vconfig.LibvirtConfigGuestVPMEM):
+                self.assertEqual("nvdimm", device.model)
+                self.assertEqual("/dev/dax0.0", device.source_path)
+                break
+        else:
+            assert False, "Unable to find any pmem device for the guest."
+
 
 class TestGuestConfigSysinfoSerialOS(test.NoDBTestCase):
     def setUp(self):
