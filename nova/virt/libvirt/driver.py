@@ -301,6 +301,9 @@ PMEMNamespace = collections.namedtuple('PMEMNamespace',
         ['uuid', 'name', 'region', 'dev', 'size_mb',
          'alignment', 'numa_node', 'assigned'])
 
+VPMEM = collections.namedtuple('VPMEM',
+        ['size_mb', 'backend_dev', 'numa_node'])
+
 
 class LibvirtDriver(driver.ComputeDriver):
     capabilities = {
@@ -1132,6 +1135,11 @@ class LibvirtDriver(driver.ComputeDriver):
 
     def cleanup(self, context, instance, network_info, block_device_info=None,
                 destroy_disks=True, migrate_data=None, destroy_vifs=True):
+        # zero the data on backend pmem device
+        vpmems = self._get_vpmems(instance)
+        if vpmems:
+            self._cleanup_vpmems(vpmems)
+
         if destroy_vifs:
             self._unplug_vifs(instance, network_info, True)
 
@@ -1224,6 +1232,14 @@ class LibvirtDriver(driver.ComputeDriver):
             instance.save()
 
         self._undefine_domain(instance)
+
+    def _cleanup_vpmems(self, vpmems):
+        for vpmem in vpmems:
+            try:
+                nova.privsep.libvirt.cleanup_vpmem(vpmem.backend_dev)
+            except Exception as e:
+                raise exception.VPMEMCleanupFailed(dev=vpmem.backend_dev,
+                                                   error=e)
 
     def _detach_encrypted_volumes(self, instance, block_device_info):
         """Detaches encrypted volumes attached to instance."""
@@ -3240,6 +3256,22 @@ class LibvirtDriver(driver.ComputeDriver):
 
         timer = loopingcall.FixedIntervalLoopingCall(_wait_for_boot)
         timer.start(interval=0.5).wait()
+
+    def _get_vpmems(self, instance):
+        vpmems = []
+        if 'numa_topology' not in instance or not instance.numa_topology:
+            return vpmems
+        for numa_node, cell in enumerate(instance.numa_topology.cells):
+            if 'virtual_pmems' not in cell or not cell.virtual_pmems:
+                continue
+            for virtual_pmem in cell.virtual_pmems:
+                vpmem = VPMEM(
+                    size_mb=virtual_pmem.size_mb,
+                    backend_dev=virtual_pmem.backend_dev,
+                    numa_node=numa_node)
+                vpmems.append(vpmem)
+                break
+        return vpmems
 
     def _get_console_output_file(self, instance, console_log):
         bytes_to_read = MAX_CONSOLE_BYTES
@@ -5415,7 +5447,25 @@ class LibvirtDriver(driver.ComputeDriver):
         if mdevs:
             self._guest_add_mdevs(guest, mdevs)
 
+        self._guest_add_vpmems(guest, instance)
+
         return guest
+
+    def _guest_add_vpmems(self, guest, instance):
+        vpmems = self._get_vpmems(instance)
+        if not vpmems:
+            return
+        guest.max_memory_size = guest.memory
+        guest.max_memory_slots = 0
+        for vpmem in vpmems:
+            size_kb = vpmem.size_mb * units.Ki
+
+            vpmem_config = vconfig.LibvirtConfigGuestVPMEM(
+                dev=vpmem.backend_dev, size_kb=size_kb, node=vpmem.numa_node)
+
+            guest.max_memory_size += size_kb
+            guest.max_memory_slots += 1
+            guest.add_device(vpmem_config)
 
     def _guest_add_mdevs(self, guest, chosen_mdevs):
         for chosen_mdev in chosen_mdevs:

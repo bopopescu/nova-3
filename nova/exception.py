@@ -2399,3 +2399,8 @@ class PMEMNamespaceNotMatchConfig(NovaException):
 class PMEMNamespaceCreateFailed(NovaException):
     msg_fmt = _("Failed to create the pmem namespace: "
                 "%(error)s")
+
+
+class VPMEMCleanupFailed(NovaException):
+    msg_fmt = _("Failed to cleanup the vpmem backend device %(dev)s: "
+                "%(error)s")
