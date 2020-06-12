@@ -182,6 +182,8 @@ class ResourceRequest(object):
         if 'extra_specs' not in flavor:
             return
 
+        memtier = False
+
         for key, val in flavor.extra_specs.items():
             if key == 'group_policy':
                 self._add_group_policy(val)
@@ -203,6 +205,13 @@ class ResourceRequest(object):
             # Process "trait[$S]"
             elif prefix == self.XS_TRAIT_PREFIX:
                 self._add_trait(suffix, name, val)
+                if name == "CUSTOM_MEMTIER" and val == "required":
+                    memtier = True
+
+        if not memtier:
+            # NOTE(luyao): Instance is scheduled to host without memory tiering
+            # by default.
+            self._add_trait(None, "CUSTOM_MEMTIER", "forbidden")
 
     def _process_image_meta(self, image):
         if not image or 'properties' not in image:

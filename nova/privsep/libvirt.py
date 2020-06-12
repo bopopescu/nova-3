@@ -252,3 +252,13 @@ def get_pmem_namespaces():
 def cleanup_vpmem(devpath):
     daxio_cmd = ['daxio', '-z', '-o', '%s' % devpath]
     processutils.execute(*daxio_cmd)
+
+
+@nova.privsep.sys_admin_pctxt.entrypoint
+def get_second_tier_memnode(toptier):
+    fpath = '/sys/devices/system/node/node{0}/migration_path'
+    fpath = fpath.format(toptier)
+    if not os.path.exists(fpath):
+        return -1
+    with open(fpath, 'r') as f:
+        return int(f.read())
