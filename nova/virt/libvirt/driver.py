@@ -426,7 +426,9 @@ class LibvirtDriver(driver.ComputeDriver):
         self.supported_vgpu_types = self._get_supported_vgpu_types()
 
         # memory tiering support: record memory node affinities
+        # and second tier memory size
         self.memory_affinities = {}
+        self.secondary_memory_mb = 0
 
     def _discover_vpmems(self, vpmem_conf=None):
         """Discover vpmems on host and configuration.
@@ -7426,6 +7428,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
         physnet_affinities = _get_physnet_numa_affinity()
         tunnel_affinities = _get_tunnel_numa_affinity()
+        self.secondary_memory_mb = 0
 
         for cell in topology.cells:
             cpus = set(cpu.id for cpu in cell.cpus)
@@ -7459,7 +7462,7 @@ class LibvirtDriver(driver.ComputeDriver):
 
             # NOTE(luyao): Memory Tiering support
             # Top tier and second tier are physically located together,
-            # try to get sencond tier if there is
+            # try to get sencond tier if it exists
             second_tier = nova.privsep.libvirt.get_second_tier_memnode(
                 cell.id)
             if second_tier > -1:
@@ -7467,7 +7470,11 @@ class LibvirtDriver(driver.ComputeDriver):
                 for second_tier_cell in topology.cells:
                     if second_tier_cell.id == second_tier:
                         cell.memory = cell.memory + second_tier_cell.memory
+                        secondary_memory = second_tier_cell.memory
                         break
+            else:
+                secondary_memory = 0
+            self.secondary_memory_mb += secondary_memory / units.Ki
 
             # NOTE(stephenfin): Note that we don't actually return any usage
             # information here. This is because this is handled by the resource
@@ -7478,9 +7485,11 @@ class LibvirtDriver(driver.ComputeDriver):
                 cpuset=cpuset,
                 pcpuset=pcpuset,
                 memory=cell.memory / units.Ki,
+                secondary_memory=secondary_memory / units.Ki,
                 cpu_usage=0,
                 pinned_cpus=set(),
                 memory_usage=0,
+                secondary_memory_usage=0,
                 siblings=siblings,
                 mempages=mempages,
                 network_metadata=network_metadata)
@@ -7621,6 +7630,16 @@ class LibvirtDriver(driver.ComputeDriver):
             },
         }
 
+        if self.secondary_memory_mb:
+            result[orc.normalize_name("secondary_memory_mb")] = {
+                'total': self.secondary_memory_mb,
+                'min_unit': 1,
+                'max_unit': self.secondary_memory_mb,
+                'step_size': 1,
+                'allocation_ratio': 1,
+                'reserved': 0,
+            }
+
         # NOTE(stephenfin): We have to optionally report these since placement
         # forbids reporting inventory with total=0
         if vcpus:
@@ -7691,6 +7710,8 @@ class LibvirtDriver(driver.ComputeDriver):
             t for t in self.static_traits if self.static_traits[t]
         ]
         traits_to_remove = set(self.static_traits) - set(traits_to_add)
+        if CONF.libvirt.memtier_enabled:
+            traits_to_add.append(ot.normalize_name("memtier"))
         provider_tree.add_traits(nodename, *traits_to_add)
         provider_tree.remove_traits(nodename, *traits_to_remove)
 
@@ -8266,9 +8287,12 @@ class LibvirtDriver(driver.ComputeDriver):
 
         data["vcpus"] = len(self._get_vcpu_available())
         data["memory_mb"] = self._host.get_memory_mb_total()
+        data["secondary_memory_mb"] = self.secondary_memory_mb
         data["local_gb"] = disk_info_dict['total']
         data["vcpus_used"] = self._get_vcpu_used()
         data["memory_mb_used"] = self._host.get_memory_mb_used()
+        # second tier memory usage report is not supported in hypervisor yet
+        data["secondary_memory_mb_used"] = 0
         data["local_gb_used"] = disk_info_dict['used']
         data["hypervisor_type"] = self._host.get_driver_type()
         data["hypervisor_version"] = self._host.get_version()

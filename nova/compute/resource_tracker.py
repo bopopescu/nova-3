@@ -1001,6 +1001,8 @@ class ResourceTracker(object):
                   "name=%(node)s "
                   "phys_ram=%(phys_ram)sMB "
                   "used_ram=%(used_ram)sMB "
+                  "phys_secondary_ram=%(phys_secondary_ram)sMB "
+                  "used_secondary_ram=%(used_secondary_ram)sMB"
                   "phys_disk=%(phys_disk)sGB "
                   "used_disk=%(used_disk)sGB "
                   "total_vcpus=%(total_vcpus)s "
@@ -1009,6 +1011,8 @@ class ResourceTracker(object):
                   {'node': nodename,
                    'phys_ram': cn.memory_mb,
                    'used_ram': cn.memory_mb_used,
+                   'phys_secondary_ram': cn.secondary_memory_mb,
+                   'used_secondary_ram': cn.secondary_memory_mb_used,
                    'phys_disk': cn.local_gb,
                    'used_disk': cn.local_gb_used,
                    'total_vcpus': tcpu,
@@ -1185,11 +1189,13 @@ class ResourceTracker(object):
         # removed or updated to use information from placement, we can think
         # about dropping the fields from the 'ComputeNode' object entirely
         mem_usage = usage['memory_mb']
+        secondary_mem_usage = usage['secondary_memory_mb']
         disk_usage = usage.get('root_gb', 0)
         vcpus_usage = usage.get('vcpus', 0)
 
         cn = self.compute_nodes[nodename]
         cn.memory_mb_used += sign * mem_usage
+        cn.secondary_memory_mb_used += sign * secondary_mem_usage
         cn.local_gb_used += sign * disk_usage
         cn.local_gb_used += sign * usage.get('ephemeral_gb', 0)
         cn.local_gb_used += sign * usage.get('swap', 0) / 1024
@@ -1212,10 +1218,14 @@ class ResourceTracker(object):
                 cn.numa_topology)
 
             free = sign == -1
+            # calculate secondary memory usage for per NUMA cell
+            # only when requiring pure secondary memory binding
+            membind2nd = False if secondary_mem_usage == 0 else True
 
             # ...and reserialize once we save it back
             cn.numa_topology = hardware.numa_usage_from_instance_numa(
-                host_numa_topology, instance_numa_topology, free)._to_json()
+                host_numa_topology, instance_numa_topology,
+                free, membind2nd=membind2nd)._to_json()
 
     def _get_migration_context_resource(self, resource, instance,
                                         prefix='new_'):
@@ -1684,12 +1694,20 @@ class ResourceTracker(object):
                                  object_or_dict.flavor.root_gb),
                      'ephemeral_gb': object_or_dict.flavor.ephemeral_gb,
                      'numa_topology': object_or_dict.numa_topology}
+            flavor = object_or_dict.flavor
         elif isinstance(object_or_dict, objects.Flavor):
             usage = obj_base.obj_to_primitive(object_or_dict)
             if _is_bfv():
                 usage['root_gb'] = 0
+            flavor = object_or_dict
         else:
             usage.update(object_or_dict)
+            flavor = None
+
+        if flavor and hardware.get_memtier_toplimit(flavor) == 0:
+            usage['secondary_memory_mb'] = flavor.memory_mb
+        else:
+            usage['secondary_memory_mb'] = 0
 
         for key in ('numa_topology',):
             if key in updates:

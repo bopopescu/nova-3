@@ -28,15 +28,18 @@ class NUMACell(base.NovaObject):
     # Version 1.2: Added mempages field
     # Version 1.3: Add network_metadata field
     # Version 1.4: Add pcpuset
-    VERSION = '1.4'
+    # Version 1.5: Add secondary_mem and secondary_memusage field
+    VERSION = '1.5'
 
     fields = {
         'id': obj_fields.IntegerField(read_only=True),
         'cpuset': obj_fields.SetOfIntegersField(),
         'pcpuset': obj_fields.SetOfIntegersField(),
         'memory': obj_fields.IntegerField(),
+        'secondary_memory': obj_fields.IntegerField(default=0),
         'cpu_usage': obj_fields.IntegerField(default=0),
         'memory_usage': obj_fields.IntegerField(default=0),
+        'secondary_memory_usage': obj_fields.IntegerField(default=0),
         'pinned_cpus': obj_fields.SetOfIntegersField(),
         'siblings': obj_fields.ListOfSetsOfIntegersField(),
         'mempages': obj_fields.ListOfObjectsField('NUMAPagesTopology'),
@@ -46,6 +49,9 @@ class NUMACell(base.NovaObject):
     def obj_make_compatible(self, primitive, target_version):
         super(NUMACell, self).obj_make_compatible(primitive, target_version)
         target_version = versionutils.convert_version_to_tuple(target_version)
+        if target_version < (1, 5):
+            primitive.pop('secondary_memory', None)
+            primitive.pop('secondary_memory_usage', None)
         if target_version < (1, 4):
             primitive.pop('pcpuset', None)
         if target_version < (1, 3):
@@ -75,6 +81,10 @@ class NUMACell(base.NovaObject):
     @property
     def avail_memory(self):
         return self.memory - self.memory_usage
+
+    @property
+    def avail_secondary_memory(self):
+        return self.secondary_memory - self.secondary_memory_usage
 
     @property
     def has_threads(self):

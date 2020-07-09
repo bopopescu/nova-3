@@ -1383,6 +1383,19 @@ For example::
 ]
 
 
+libvirt_memtier_opts = [
+  cfg.BoolOpt('memtier_enabled',
+              default=False,
+              help="""
+This option allows Nova to detect if memory tiering is enabled on host
+
+When enabled, Nova will attach a trait to the host via Placement, then
+the instances with memtier requests will be scheduled to those hosts with
+memory tiering enabled.
+""")
+]
+
+
 ALL_OPTS = list(itertools.chain(
     libvirt_general_opts,
     libvirt_imagebackend_opts,
@@ -1402,6 +1415,7 @@ ALL_OPTS = list(itertools.chain(
     libvirt_virtio_queue_sizes,
     libvirt_volume_nvmeof_opts,
     libvirt_pmem_opts,
+    libvirt_memtier_opts,
 ))
 
 

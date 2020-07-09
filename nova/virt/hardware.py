@@ -2150,7 +2150,7 @@ def _numa_pagesize_usage_from_cell(host_cell, instance_cell, sign):
 
 
 def numa_usage_from_instance_numa(host_topology, instance_topology,
-                                  free=False):
+                                  free=False, membind2nd=False):
     """Update the host topology usage.
 
     Update the host NUMA topology based on usage by the provided instance NUMA
@@ -2161,6 +2161,8 @@ def numa_usage_from_instance_numa(host_topology, instance_topology,
         retrieve usage information.
     :param free: If true, decrease, rather than increase, host usage based on
         instance usage.
+    :param membind2nd: If this instance memory is bond to second tier memory
+        node
 
     :returns: Updated objects.NUMATopology for host
     """
@@ -2172,6 +2174,7 @@ def numa_usage_from_instance_numa(host_topology, instance_topology,
 
     for host_cell in host_topology.cells:
         memory_usage = host_cell.memory_usage
+        secondary_memory_usage = host_cell.secondary_memory_usage
         shared_cpus_usage = host_cell.cpu_usage
 
         # The 'pcpuset' field is only set by newer compute nodes, so if it's
@@ -2192,8 +2195,10 @@ def numa_usage_from_instance_numa(host_topology, instance_topology,
             cpuset=shared_cpus,
             pcpuset=dedicated_cpus,
             memory=host_cell.memory,
+            secondary_memory=host_cell.secondary_memory,
             cpu_usage=0,
             memory_usage=0,
+            secondary_memory_usage=0,
             mempages=host_cell.mempages,
             pinned_cpus=host_cell.pinned_cpus,
             siblings=host_cell.siblings)
@@ -2209,6 +2214,9 @@ def numa_usage_from_instance_numa(host_topology, instance_topology,
                 new_cell, instance_cell, sign)
 
             memory_usage = memory_usage + sign * instance_cell.memory
+            if membind2nd:
+                secondary_memory_usage = (secondary_memory_usage +
+                    sign * instance_cell.memory)
 
             if not instance_cell.cpu_pinning_requested:
                 shared_cpus_usage += sign * len(instance_cell.cpuset)
@@ -2234,6 +2242,7 @@ def numa_usage_from_instance_numa(host_topology, instance_topology,
         # NOTE(stephenfin): We don't need to set 'pinned_cpus' here since that
         # was done in the above '(un)pin_cpus(_with_siblings)' functions
         new_cell.memory_usage = max(0, memory_usage)
+        new_cell.secondary_memory_usage = max(0, secondary_memory_usage)
         new_cell.cpu_usage = max(0, shared_cpus_usage)
         cells.append(new_cell)
 
