@@ -153,7 +153,10 @@ class ResourceRequest(object):
             self._add_resource(None, orc.VCPU, request_spec.vcpus)
 
         if orc.MEMORY_MB not in merged_resources:
-            self._add_resource(None, orc.MEMORY_MB, request_spec.memory_mb)
+            memory_mb = request_spec.memory_mb
+            self._add_resource(None, orc.MEMORY_MB, memory_mb)
+        else:
+            memory_mb = merged_resources[orc.MEMORY_MB]
 
         if orc.DISK_GB not in merged_resources:
             disk = request_spec.ephemeral_gb
@@ -167,6 +170,8 @@ class ResourceRequest(object):
         self._translate_memory_encryption(request_spec.flavor, image)
 
         self._translate_vpmems_request(request_spec.flavor)
+
+        self._translate_memtier_request(request_spec.flavor, memory_mb)
 
         self.strip_zeros()
 
@@ -248,6 +253,18 @@ class ResourceRequest(object):
             self._add_resource(None, resource_class, amount)
             LOG.debug("Added resource %s=%d to requested resources",
                       resource_class, amount)
+
+    def _translate_memtier_request(self, flavor, memory_mb):
+        memtier_trait = "trait:CUSTOM_MEMTIER"
+        if not flavor.extra_specs.get(memtier_trait):
+            # NOTE(luyao): Instance should be scheduled to host without
+            # memory tiering by default.
+            self._add_trait(None, "CUSTOM_MEMTIER", "forbidden")
+            return
+        memtier_top_limit = hardware.get_memtier_toplimit(flavor)
+        if memtier_top_limit == 0:
+            resource_class = orc.normalize_name("secondary_memory_mb")
+            self._add_resource(None, resource_class, memory_mb)
 
     def _translate_pinning_policies(self, flavor, image):
         """Translate the legacy pinning policies to resource requests."""

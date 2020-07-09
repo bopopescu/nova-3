@@ -183,11 +183,11 @@ def set_vif_bandwidth_config(conf, inst_type):
                 setattr(conf, scope[1], value)
 
 
-def set_numa_memnode(conf, guest_node_id, host_cell_id):
+def set_numa_memnode(conf, guest_node_id, host_cell_ids):
     """Prepares numa memory node config for the guest.
     """
     conf.cellid = guest_node_id
-    conf.nodeset = [host_cell_id]
+    conf.nodeset = host_cell_ids
     conf.mode = "strict"
 
 

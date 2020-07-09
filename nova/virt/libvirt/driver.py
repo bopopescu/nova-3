@@ -425,6 +425,9 @@ class LibvirtDriver(driver.ComputeDriver):
         self.pgpu_type_mapping = collections.defaultdict(str)
         self.supported_vgpu_types = self._get_supported_vgpu_types()
 
+        # memory tiering support: record memory node affinities
+        self.memory_affinities = {}
+
     def _discover_vpmems(self, vpmem_conf=None):
         """Discover vpmems on host and configuration.
 
@@ -5011,6 +5014,15 @@ class LibvirtDriver(driver.ComputeDriver):
 
         return emulatorpin_cpuset
 
+    def _get_guest_memtune(self, flavor):
+        """Return config object of LibvirtConfigGuestMemoryTune"""
+        memtune = vconfig.LibvirtConfigGuestMemoryTune()
+        toplimit = hardware.get_memtier_toplimit(flavor)
+        if toplimit < 0:
+            return None
+        memtune.toptier_limit = toplimit
+        return memtune
+
     def _get_guest_numa_config(self, instance_numa_topology, flavor,
                                image_meta):
         """Returns the config objects for the guest NUMA specs.
@@ -5107,9 +5119,19 @@ class LibvirtDriver(driver.ComputeDriver):
                 cell_pairs):
             # set NUMATune for the cell
             tnode = vconfig.LibvirtConfigGuestNUMATuneMemNode()
-            designer.set_numa_memnode(tnode, guest_node_id, host_cell.id)
+            memtier_toplimit = hardware.get_memtier_toplimit(flavor)
+            if memtier_toplimit < 0:
+                designer.set_numa_memnode(tnode, guest_node_id, [host_cell.id])
+                guest_numa_tune.memory.nodeset.append(host_cell.id)
+            else:
+                second_tier = self.memory_affinities[host_cell.id]
+                guest_numa_tune.memory.nodeset.extend([host_cell.id, second_tier])
+                if memtier_toplimit == 0:
+                    designer.set_numa_memnode(tnode, guest_node_id, [second_tier])
+                else:
+                    designer.set_numa_memnode(tnode, guest_node_id,
+                                              [host_cell.id, second_tier])
             guest_numa_tune.memnodes.append(tnode)
-            guest_numa_tune.memory.nodeset.append(host_cell.id)
 
             # set CPUTune for the cell
             object_numa_cell = instance_numa_topology.cells[guest_node_id]
@@ -5892,6 +5914,9 @@ class LibvirtDriver(driver.ComputeDriver):
         # We are using default unit for memory: KiB
         guest.memory = flavor.memory_mb * units.Ki
         guest.vcpus = flavor.vcpus
+
+        # We are using default unit for mmetune: KiB
+        guest.memtune = self._get_guest_memtune(flavor)
 
         guest_numa_config = self._get_guest_numa_config(
             instance.numa_topology, flavor, image_meta)
@@ -7431,6 +7456,18 @@ class LibvirtDriver(driver.ComputeDriver):
             network_metadata = objects.NetworkMetadata(
                 physnets=physnet_affinities[cell.id],
                 tunneled=tunnel_affinities[cell.id])
+
+            # NOTE(luyao): Memory Tiering support
+            # Top tier and second tier are physically located together,
+            # try to get sencond tier if there is
+            second_tier = nova.privsep.libvirt.get_second_tier_memnode(
+                cell.id)
+            if second_tier > -1:
+                self.memory_affinities[cell.id] = second_tier
+                for second_tier_cell in topology.cells:
+                    if second_tier_cell.id == second_tier:
+                        cell.memory = cell.memory + second_tier_cell.memory
+                        break
 
             # NOTE(stephenfin): Note that we don't actually return any usage
             # information here. This is because this is handled by the resource

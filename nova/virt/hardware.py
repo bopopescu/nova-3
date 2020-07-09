@@ -1787,8 +1787,11 @@ def numa_get_constraints(flavor, image_meta):
     nodes = _get_numa_node_count_constraint(flavor, image_meta)
     pagesize = _get_numa_pagesize_constraint(flavor, image_meta)
     vpmems = get_vpmems(flavor)
+    memtier_toplimit = get_memtier_toplimit(flavor)
 
-    if nodes or pagesize or vpmems:
+    # if VM requests memory all located on second tier memory,
+    # it will needs memory node binding to support
+    if nodes or pagesize or vpmems or (memtier_toplimit == 0):
         nodes = nodes or 1
 
         cpu_list = _get_numa_cpu_constraint(flavor, image_meta)
@@ -2260,3 +2263,17 @@ def check_hw_rescue_props(image_meta):
     """
     hw_rescue_props = ['hw_rescue_device', 'hw_rescue_bus']
     return any(key in image_meta.properties for key in hw_rescue_props)
+
+
+def get_memtier_toplimit(flavor):
+    """Return toptier limit if the VM request memory tiering"""
+    extra_specs = flavor.get('extra_specs', {})
+    toptier_limit = extra_specs.get('hw:memtier.toptier_limit')
+    if toptier_limit:
+        # convert to kib unit
+        pattern = re.compile(r"(\d+)(GB|MB|KB|$)")
+        value, unit = pattern.match(toptier_limit).groups()
+        limit_kb = int(value) * (units.Mi if unit == "GB" else (
+                units.Ki if unit == "MB" else 1))
+        return int(limit_kb)
+    return -1

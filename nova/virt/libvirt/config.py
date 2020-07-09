@@ -2436,6 +2436,7 @@ class LibvirtConfigGuestMemoryTune(LibvirtConfigObject):
         self.hard_limit = None
         self.soft_limit = None
         self.swap_hard_limit = None
+        self.toptier_limit = None
         self.min_guarantee = None
 
     def format_dom(self):
@@ -2452,6 +2453,10 @@ class LibvirtConfigGuestMemoryTune(LibvirtConfigObject):
         if self.swap_hard_limit is not None:
             root.append(self._text_node("swap_hard_limit",
                                         str(self.swap_hard_limit),
+                                        unit="KiB"))
+        if self.toptier_limit is not None:
+            root.append(self._text_node("toptier_soft_limit",
+                                        str(self.toptier_limit),
                                         unit="KiB"))
         if self.min_guarantee is not None:
             root.append(self._text_node("min_guarantee",
